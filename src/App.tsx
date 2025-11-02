@@ -1,9 +1,9 @@
+// src/App.tsx
 import { AnimatePresence, motion } from "framer-motion";
 import { Github, Youtube, Twitter, Link2, Mail } from "lucide-react";
 import { Window } from "@/ui/Window";
 import { RootDesktopPage } from "@/pages/RootDesktopPage";
 import { LabHomePage } from "@/pages/LabHomePage";
-import { BlogPage, BlogPostPage } from "@/pages/BlogPage";
 import { EsportsPage } from "@/pages/EsportsPage";
 import { CommissionsPage } from "@/pages/CommissionsPage";
 import { PortfolioPage } from "@/pages/PortfolioPage";
@@ -18,6 +18,12 @@ import {
 import { IMAGES } from "@/assets.manifest";
 import React, { type JSX } from "react";
 import { ClassicTaskbar } from "./ui/Taskbar";
+// REMOVE this:
+// import { BlogPage, BlogPostPage } from "@/pages/BlogPage";
+
+// ADD these:
+import BlogIndexPage from "@/pages/blog/index";
+import BlogSlugPage from "@/pages/blog/slug";
 
 
 export default function KabutoHub90s() {
@@ -40,10 +46,8 @@ export default function KabutoHub90s() {
   const crackedBG = "/assets/kabuto/ui/cracked.jpg";
   const selfPNG = "/assets/kabuto/portfolio/self.png";
 
-  // cursor trail
   useCursorTrail(!(transitioning || splashShowing));
 
-  // *** Preload EVERYTHING so there’s no pop-in anywhere ***
   usePreloadImages([
     LOGO_SRC, FAVICON_SRC, FEATURE_IMAGE_PRIMARY, SMOKER_SRC, ROOT_WALL,
     ICON_PORTFOLIO, ICON_LAB, ICON_IRL, ICON_CONTACT, PF_VIEWMODEL, PF_START, PF_PCICON,
@@ -53,7 +57,6 @@ export default function KabutoHub90s() {
     ...PORTFOLIO_SAMPLES.filter(x => x.type === "image").map(x => x.src),
   ]);
 
-  // sfx init/unlock
   React.useEffect(() => {
     try {
       clickSfx.current = new Audio(SFX_CLICK);
@@ -71,7 +74,6 @@ export default function KabutoHub90s() {
     } catch {}
   }, []);
 
-  // pre-navigate transition
   React.useEffect(() => {
     const onPre = (e:any) => {
       const nextPath: string = e.detail?.nextPath || "/";
@@ -90,7 +92,6 @@ export default function KabutoHub90s() {
     return () => window.removeEventListener("kabuto:pre-navigate", onPre);
   }, []);
 
-  // first-load splash on desktop routes
   React.useEffect(() => {
     if (path === "/" || path === "/portfolio") {
       setTransitioning(true);
@@ -110,7 +111,6 @@ export default function KabutoHub90s() {
     return () => el.classList.remove("splash-lock");
   }, [splashShowing]);
 
-  // titles + favicon
   React.useEffect(() => {
     document.title =
       path === "/" ? "kabuto" :
@@ -121,7 +121,6 @@ export default function KabutoHub90s() {
     link.href = FAVICON_SRC;
   }, [path]);
 
-  // sticky top bar height (non-desktop pages)
   const [navH, setNavH] = React.useState(48);
   const navRefCb = React.useCallback((el: HTMLDivElement | null) => { navRef.current = el; if (!el) return; const r = () => setNavH(el.offsetHeight || 48); r(); new ResizeObserver(r).observe(el); }, []);
   const global = (
@@ -134,12 +133,13 @@ export default function KabutoHub90s() {
     `}</style>
   );
 
-  // route view
+  // routes
   let view: JSX.Element | null = null;
   if (path === "/") view = <RootDesktopPage/>;
   else if (path === "/lab") view = <LabHomePage/>;
-  else if (path === "/blog") view = <BlogPage/>;
-  else if (path.startsWith("/blog/")) view = <BlogPostPage slug={decodeURIComponent(path.replace("/blog/",""))}/>;
+  else if (path === "/blog") view = <BlogIndexPage/>;
+  else if (path.startsWith("/blog/"))
+  view = <BlogSlugPage slug={decodeURIComponent(path.replace("/blog/",""))} />;
   else if (path === "/esports") view = <EsportsPage/>;
   else if (path === "/commissions") view = <CommissionsPage/>;
   else if (path === "/portfolio") view = <PortfolioPage/>;
@@ -152,12 +152,11 @@ export default function KabutoHub90s() {
     <div className={"min-h-screen text-[var(--primarySoft)] bg-[var(--bg)] subpixel-antialiased" + (path === "/" || path === "/portfolio" ? " overflow-hidden" : "")}>
       {global}
 
-      {/* top bar – hidden on desktop-like routes */}
       {!(path === "/" || path === "/portfolio") && (
         <div
-            ref={navRefCb}
-            className="fixed left-0 right-0 top-0 z-40 border-b border-[#4a5a45] bg-[#3a4538]/90 backdrop-blur"
-          >
+          ref={navRefCb}
+          className="fixed left-0 right-0 top-0 z-40 border-b border-[#4a5a45] bg-[#3a4538]/90 backdrop-blur"
+        >
           <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-3">
             {path !== homeTarget && (
               <button onClick={()=>navigate(homeTarget)} className="rounded-[4px] border border-[#4a5a45] bg-[#3a4538] px-2 py-1 text-xs hover:border-[var(--primary)] hover:bg-[#404b3f] transition-colors">Home</button>
@@ -189,7 +188,6 @@ export default function KabutoHub90s() {
         </div>
       )}
 
-      {/* content */}
       <div className={path === "/" || path === "/portfolio" ? "" : "mx-auto max-w-6xl px-0"}>
         {path === "/" || path === "/portfolio" ? (
           <div>{view}</div>
@@ -202,10 +200,8 @@ export default function KabutoHub90s() {
         )}
       </div>
 
-      {/* black overlay during route change */}
       <AnimatePresence>{transitioning && (<motion.div className="fixed inset-0 z-[180] bg-black" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} transition={{ duration:0.5 }}/>)}</AnimatePresence>
 
-      {/* splash layer */}
       <AnimatePresence>
         {splashShowing && splashImage && (
           <motion.div id="kabuto-splash" key={splashImage} className="fixed inset-0 z-[190] grid place-items-center bg-black"
@@ -215,11 +211,11 @@ export default function KabutoHub90s() {
           </motion.div>
         )}
       </AnimatePresence>
-            <div style={{ zIndex: 100 }}>
+
+      <div style={{ zIndex: 100 }}>
         <ClassicTaskbar onStart={() => window.dispatchEvent(new CustomEvent("kabuto:pre-navigate", { detail:{ nextPath: "/" } }))} />
       </div>
 
-      {/* cursor trail */}
       {Array.from({ length: 10 }).map((_, i) => (
         <span key={i} id={`ktrail-${i}`} className="pointer-events-none fixed"
           style={{ left:0, top:0, width:24, height:24, backgroundImage:`url("${CURSOR_URL}")`, backgroundRepeat:"no-repeat", backgroundSize:"contain",

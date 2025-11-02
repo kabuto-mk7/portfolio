@@ -6,7 +6,6 @@ type Btn = { label: string; to: string };
 export function ClassicTaskbar({
   onStart,
   buttons = [
-    { label: "Home", to: "/" },
     { label: "Portfolio", to: "/portfolio" },
     { label: "Blog", to: "/lab" },
   ],
