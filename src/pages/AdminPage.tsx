@@ -1,101 +1,129 @@
+// src/pages/AdminPage.tsx
 import React from "react";
-import { Panel, Window } from "@/ui/Window";
+import { Window, Panel } from "@/ui/Window";
 import type { EventRow, Post, MediaItem } from "@/types";
-
-// Events stay in local content:
 import { loadEvents, saveEvents, savePosts } from "@/lib/content";
+import {
+  listPortfolioItems,
+  addPortfolioFiles,   // <- single-arg in your repo
+  deletePortfolioItem,
+  listPostsAdmin,
+  createPost,
+  deletePost,
+} from "@/lib/storage";
+import { createClient } from "@supabase/supabase-js";
+import { Plus, Save, Trash2 } from "lucide-react";
 
-// Portfolio (Supabase/IndexedDB layer):
-import { addPortfolioFiles, deletePortfolioItem, listPortfolioItems } from "@/lib/storage";
+/* ───────────────────────── Supabase Auth (Magic Link, allowlisted) ───────────────────────── */
 
-// Posts (Supabase table + blog bucket):
-import { createPost, listPostsAdmin, deletePost } from "@/lib/storage";
+const SB_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const SB_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL as string | undefined)?.toLowerCase() ?? "";
 
-import { supabase } from "@/lib/supabase";
-import { Plus, Save, Trash2, PencilLine} from "lucide-react";
+const supabase =
+  SB_URL && SB_ANON
+    ? createClient(SB_URL, SB_ANON, { auth: { persistSession: true } })
+    : null;
 
-/* =========================
-   Admin Page (auth)
-   ========================= */
+/* ───────────────────────── Types/Transforms ───────────────────────── */
+
+type BlogPostRow = {
+  id: string;
+  slug: string;
+  title: string;
+  date?: string | null;
+  summary?: string | null;
+  content?: string | null;
+  published: boolean;
+  attachments?: { id: string; type: "image" | "video"; src: string }[] | null;
+  updated_at?: string | null;
+};
+
+function rowToPost(r: BlogPostRow): Post {
+  return {
+    id: r.id,
+    slug: r.slug,
+    title: r.title,
+    date: r.date ?? "",
+    summary: r.summary ?? "",
+    content: r.content ?? "",
+    published: !!r.published,
+    attachments: (r.attachments ?? []).map((a) => ({ id: a.id, type: a.type, src: a.src })),
+    updatedAt: r.updated_at ? Date.parse(r.updated_at) : Date.now(),
+  };
+}
+
+/* ───────────────────────── Admin Page ───────────────────────── */
+
 export function AdminPage() {
-  const [user, setUser] = React.useState<any>(null);
   const [email, setEmail] = React.useState("");
-  const [mode, setMode] = React.useState<"events" | "posts" | "portfolio">("events");
+  const [status, setStatus] = React.useState<null | string>(null);
 
-  React.useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data.user ?? null));
-    const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
-      setUser(session?.user ?? null);
-    });
-    return () => sub.subscription.unsubscribe();
-  }, []);
-
-  async function sendMagicLink(e: React.FormEvent) {
+  async function handleSendLink(e: React.FormEvent) {
     e.preventDefault();
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin },
-    });
-    if (error) alert(error.message);
-    else alert("Magic link sent. Check your email.");
-  }
 
-  if (!user) {
-    return (
-      <main className="mx-auto max-w-6xl px-4 py-8">
-        <Window title="Admin – Sign in">
-          <form onSubmit={sendMagicLink} className="grid gap-3 max-w-sm">
-            <label className="text-sm">Email</label>
-            <input
-              name="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1 text-sm"
-              placeholder="you@your-domain.com"
-            />
-            <button className="inline-flex items-center gap-2 rounded border border-[#4a5a45] bg-[#3a4538] px-3 py-1 text-sm hover:border-[var(--primary)]">
-              Send magic link
-            </button>
-          </form>
-        </Window>
-      </main>
-    );
+    const input = email.trim().toLowerCase();
+    if (!ADMIN_EMAIL || input !== ADMIN_EMAIL) {
+      setStatus("Not authorized (email not on allowlist).");
+      return;
+    }
+    if (!supabase) {
+      setStatus("Supabase not configured (missing VITE_SUPABASE_* envs).");
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email: input,
+      options: { shouldCreateUser: false, emailRedirectTo: `${window.location.origin}/admin` },
+    });
+
+    setStatus(error ? `Error: ${error.message}` : "Magic link sent. Check your email.");
   }
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
       <Window title="Admin">
-        <div className="flex flex-wrap gap-2 mb-4">
-          <button
-            onClick={() => setMode("events")}
-            className={`rounded px-3 py-1 text-sm border ${mode === "events" ? "border-[var(--primary)] bg-[#404b3f]" : "border-[#4a5a45] bg-[#3a4538]"}`}
-          >
-            Events
-          </button>
-          <button
-            onClick={() => setMode("posts")}
-            className={`rounded px-3 py-1 text-sm border ${mode === "posts" ? "border-[var(--primary)] bg-[#404b3f]" : "border-[#4a5a45] bg-[#3a4538]"}`}
-          >
-            Posts
-          </button>
-          <button
-            onClick={() => setMode("portfolio")}
-            className={`rounded px-3 py-1 text-sm border ${mode === "portfolio" ? "border-[var(--primary)] bg-[#404b3f]" : "border-[#4a5a45] bg-[#3a4538]"}`}
-          >
-            Portfolio
-          </button>
+        <Panel title="Login" rightTag="magic link">
+          <form onSubmit={handleSendLink} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex-1">
+              <label className="block text-xs uppercase opacity-70 mb-1">Admin email</label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@yourdomain.com"
+                className="w-full rounded border border-white/15 bg-white/5 px-3 py-2 outline-none"
+              />
+              <div className="text-xs mt-1 opacity-70">
+                Only <code>VITE_ADMIN_EMAIL</code> is allowed. Sign-ups are disabled.
+              </div>
+            </div>
+            <button
+              type="submit"
+              className="inline-flex items-center gap-1 rounded border border-[#4a5a45] px-3 py-2 bg-[#3a4538] hover:bg-[#404b3f]"
+            >
+              Send link
+            </button>
+          </form>
+          {status && <div className="mt-2 text-sm opacity-80">{status}</div>}
+        </Panel>
+
+        <div className="grid gap-6 mt-6">
+          <AdminEvents />
+          <AdminPosts />
+          <AdminPortfolio />
         </div>
-        {mode === "events" ? <AdminEvents /> : mode === "posts" ? <AdminPosts /> : <AdminPortfolio />}
       </Window>
     </main>
   );
 }
 
 /* ───────────────────────── Events (local content) ───────────────────────── */
+
 function AdminEvents() {
   const [rows, setRows] = React.useState<EventRow[]>(() => loadEvents());
+
   const [draft, setDraft] = React.useState<EventRow>({
     id: "",
     game: "",
@@ -103,159 +131,120 @@ function AdminEvents() {
     location: "",
     event: "",
     placement: "",
-    published: true,
+    published: false,
   });
 
-  function saveAll(next: EventRow[]) {
+  function onChange<K extends keyof EventRow>(k: K, v: EventRow[K]) {
+    setDraft((d) => ({ ...d, [k]: v }));
+  }
+
+  function addRow() {
+    const id = crypto.randomUUID();
+    const next = [{ ...draft, id }, ...rows];
+    setRows(next);
+    saveEvents(next);
+
+    setDraft({
+      id: "",
+      game: "",
+      date: "",
+      location: "",
+      event: "",
+      placement: "",
+      published: false,
+    });
+  }
+
+  function delRow(id: string) {
+    const next = rows.filter((r) => r.id !== id);
     setRows(next);
     saveEvents(next);
   }
-  function addRow() {
-    if (!draft.game || !draft.date) return alert("Game and date required");
-    const row: EventRow = { ...draft, id: (crypto as any).randomUUID?.() ?? String(Date.now()) };
-    const next = [row, ...rows];
-    setDraft({ id: "", game: "", date: "", location: "", event: "", placement: "", published: true });
-    saveAll(next);
-  }
-  function delRow(id: string) {
-    saveAll(rows.filter((r) => r.id !== id));
-  }
-  function updRow(id: string, patch: Partial<EventRow>) {
-    saveAll(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-  }
 
   return (
-    <div className="grid gap-4">
-      <Panel title="Add event" rightTag="new">
-        <div className="grid md:grid-cols-6 gap-2 text-xs">
-          <input placeholder="Game" value={draft.game} onChange={(e) => setDraft({ ...draft, game: e.target.value })} className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1" />
-          <input placeholder="Date (YYYY-MM-DD)" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1" />
-          <input placeholder="Location" value={draft.location} onChange={(e) => setDraft({ ...draft, location: e.target.value })} className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1" />
-          <input placeholder="Event" value={draft.event} onChange={(e) => setDraft({ ...draft, event: e.target.value })} className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1" />
-          <input placeholder="Placement (e.g., 12/128 or 1st)" value={draft.placement} onChange={(e) => setDraft({ ...draft, placement: e.target.value })} className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1" />
-          <label className="inline-flex items-center gap-2 px-1">
-            <input type="checkbox" checked={draft.published} onChange={(e) => setDraft({ ...draft, published: e.target.checked })} />
-            <span>Published</span>
-          </label>
-        </div>
-        <div className="mt-2">
-          <button onClick={addRow} className="inline-flex items-center gap-2 rounded border border-[#4a5a45] bg-[#3a4538] px-3 py-1 text-sm hover:border-[var(--primary)]">
-            <Plus className="h-4 w-4" /> Add
-          </button>
-        </div>
-      </Panel>
-
-      <Panel title="Events" rightTag={`${rows.length}`}>
-        {rows.length === 0 ? (
-          <div className="text-sm opacity-70">No entries.</div>
-        ) : (
-          <div className="overflow-x-auto rounded-[6px] border border-[#4a5a45]">
-            <table className="w-full text-xs">
-              <thead className="bg-[#334031] text-[var(--accent)]">
-                <tr>
-                  <th className="px-2 py-2 text-left">Game</th>
-                  <th className="px-2 py-2 text-left">Date</th>
-                  <th className="px-2 py-2 text-left">Location</th>
-                  <th className="px-2 py-2 text-left">Event</th>
-                  <th className="px-2 py-2 text-left">Placement</th>
-                  <th className="px-2 py-2 text-left">Published</th>
-                  <th className="px-2 py-2 text-left">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows
-                  .slice()
-                  .sort((a, b) => (new Date(b.date).getTime() || 0) - (new Date(a.date).getTime() || 0))
-                  .map((r) => (
-                    <tr key={r.id} className="border-t border-[#2a3328]">
-                      <td className="px-2 py-2">
-                        <input value={r.game} onChange={(e) => updRow(r.id, { game: e.target.value })} className="w-full bg-transparent outline-none" />
-                      </td>
-                      <td className="px-2 py-2">
-                        <input value={r.date} onChange={(e) => updRow(r.id, { date: e.target.value })} className="w-full bg-transparent outline-none" />
-                      </td>
-                      <td className="px-2 py-2">
-                        <input value={r.location} onChange={(e) => updRow(r.id, { location: e.target.value })} className="w-full bg-transparent outline-none" />
-                      </td>
-                      <td className="px-2 py-2">
-                        <input value={r.event} onChange={(e) => updRow(r.id, { event: e.target.value })} className="w-full bg-transparent outline-none" />
-                      </td>
-                      <td className="px-2 py-2">
-                        <input value={r.placement} onChange={(e) => updRow(r.id, { placement: e.target.value })} className="w-full bg-transparent outline-none" />
-                      </td>
-                      <td className="px-2 py-2">
-                        <label className="inline-flex items-center gap-2">
-                          <input type="checkbox" checked={r.published} onChange={(e) => updRow(r.id, { published: e.target.checked })} />
-                          <span className="opacity-70">{r.published ? "Yes" : "No"}</span>
-                        </label>
-                      </td>
-                      <td className="px-2 py-2">
-                        <button onClick={() => delRow(r.id)} className="inline-flex items-center gap-1 rounded border border-[#4a5a45] px-2 py-1 hover:border-red-400">
-                          <Trash2 className="h-4 w-4" /> Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+    <Panel title="Events" rightTag={`${rows.length}`}>
+      <div className="grid gap-3">
+        <div className="grid gap-2 sm:grid-cols-5">
+          <input value={draft.game} onChange={(e) => onChange("game", e.target.value)} placeholder="Game" className="rounded border border-white/15 bg-white/5 px-2 py-2" />
+          <input value={draft.date} onChange={(e) => onChange("date", e.target.value)} placeholder="YYYY-MM-DD" className="rounded border border-white/15 bg-white/5 px-2 py-2" />
+          <input value={draft.location} onChange={(e) => onChange("location", e.target.value)} placeholder="Location" className="rounded border border-white/15 bg-white/5 px-2 py-2" />
+          <input value={draft.event} onChange={(e) => onChange("event", e.target.value)} placeholder="Event" className="rounded border border-white/15 bg-white/5 px-2 py-2" />
+          <div className="flex gap-2">
+            <input value={draft.placement} onChange={(e) => onChange("placement", e.target.value)} placeholder="Place" className="flex-1 rounded border border-white/15 bg-white/5 px-2 py-2" />
+            <button onClick={addRow} className="inline-flex items-center gap-1 rounded border border-[#4a5a45] px-2">
+              <Plus className="h-4 w-4" /> Add
+            </button>
           </div>
-        )}
-      </Panel>
-      <div className="text-xs opacity-60">Tip: Use exact YYYY-MM-DD so sorting stays perfect.</div>
-    </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead className="opacity-70">
+              <tr>
+                <th className="text-left py-1 pr-3">Game</th>
+                <th className="text-left py-1 pr-3">Date</th>
+                <th className="text-left py-1 pr-3">Location</th>
+                <th className="text-left py-1 pr-3">Event</th>
+                <th className="text-left py-1 pr-3">Place</th>
+                <th className="py-1 pr-3" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id} className="border-t border-white/10">
+                  <td className="py-1 pr-3">{r.game}</td>
+                  <td className="py-1 pr-3">{r.date}</td>
+                  <td className="py-1 pr-3">{r.location}</td>
+                  <td className="py-1 pr-3">{r.event}</td>
+                  <td className="py-1 pr-3">{r.placement}</td>
+                  <td className="py-1 pr-3 text-right">
+                    <button onClick={() => delRow(r.id)} className="inline-flex items-center gap-1 rounded border border-[#4a5a45] px-2 py-1 hover:border-red-400">
+                      <Trash2 className="h-4 w-4" /> Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="text-xs opacity-60">Tip: use exact YYYY-MM-DD so sorting stays perfect.</div>
+      </div>
+    </Panel>
   );
 }
 
-/* ───────────────────────── Posts (Supabase) ───────────────────────── */
+/* ───────────────────────── Posts (Supabase → sync to localStorage) ───────────────────────── */
+
 function AdminPosts() {
-  const [rows, setRows] = React.useState<any[]>([]);
+  const [rows, setRows] = React.useState<BlogPostRow[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [files, setFiles] = React.useState<File[]>([]);
-  const [draft, setDraft] = React.useState({ slug: "", title: "", summary: "", content: "", published: false });
+  const [draft, setDraft] = React.useState({
+    slug: "",
+    title: "",
+    summary: "",
+    content: "",
+    published: false,
+  });
 
-  // Helper to convert BlogPostRow objects returned from Supabase into the
-  // Post shape expected by our localStorage helpers. BlogPostRow uses
-  // `updated_at` (snake_case) and stores attachments as BlogAttachment[],
-  // whereas Post uses `updatedAt` (camelCase) and MediaItem[]. We also
-  // coerce attachments to a sane default and parse the updated_at string
-  // into a numeric timestamp.
-  function syncToLocal(rawRows: any[]) {
-    const posts: Post[] = rawRows.map((r) => {
-      const { updated_at, attachments, ...rest } = r;
-      // Convert snake_case updated_at string to numeric updatedAt.
-      const updatedAt = updated_at ? new Date(updated_at).getTime() : Date.now();
-      // Ensure attachments array exists. BlogAttachment matches MediaItem except for the
-      // optional `name` property, which Post doesn't care about.
-      const atts = Array.isArray(attachments) ? attachments.map((a: any) => ({
-        id: a.id,
-        src: a.src,
-        type: a.type,
-      })) : [];
-      return { ...rest, updatedAt, attachments: atts, published: r.published } as Post;
-    });
-    savePosts(posts);
-  }
-
-  // Load posts from Supabase on mount. Also sync them to localStorage so the public blog pages can read them.
   React.useEffect(() => {
-    listPostsAdmin()
-      .then((rows) => {
-        setRows(rows);
-        // Convert the raw rows to Posts and write them into localStorage.
-        syncToLocal(rows);
-      })
-      .catch(console.error);
+    let mounted = true;
+    (async () => {
+      const data = await listPostsAdmin();
+      if (!mounted) return;
+      setRows(data as BlogPostRow[]);
+      savePosts((data as BlogPostRow[]).map(rowToPost));
+    })().catch(console.error);
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   function genSlug(title: string) {
-    const base = title
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, "")
-      .trim()
-      .replace(/\s+/g, "-")
-      .slice(0, 64) || "post";
-    let s = base,
-      i = 2;
+    const base = title.toLowerCase().replace(/[^a-z0-9\s-]/g, "").trim().replace(/\s+/g, "-").slice(0, 64) || "post";
+    let s = base;
+    let i = 2;
     const existing = new Set(rows.map((r) => r.slug));
     while (existing.has(s)) s = `${base}-${i++}`;
     return s;
@@ -268,108 +257,112 @@ function AdminPosts() {
       const now = new Date();
       const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
       const slug = draft.slug || genSlug(draft.title);
-      // Create the post in Supabase.
-      const created = await createPost({ slug, title: draft.title, date, summary: draft.summary, content: draft.content, published: draft.published }, files);
-      // Update the rows state and sync to localStorage in a single callback.
-      setRows((r) => {
-        const next = [created, ...r];
-        // Sync the newly created post along with existing rows to localStorage.
-        syncToLocal(next);
-        return next;
-      });
-      setDraft({ slug: "", title: "", summary: "", content: "", published: false });
+
+      await createPost(
+        { slug, title: draft.title, date, summary: draft.summary, content: draft.content, published: draft.published },
+        files
+      );
+
+      const data = (await listPostsAdmin()) as BlogPostRow[];
+      setRows(data);
+      savePosts(data.map(rowToPost));
+
       setFiles([]);
-    } catch (e: any) {
-      alert(e?.message ?? String(e));
+      setDraft({ slug: "", title: "", summary: "", content: "", published: false });
+    } catch (err) {
+      console.error(err);
+      alert(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onDelete(id: string) {
+    if (!confirm("Delete post?")) return;
+    setBusy(true);
+    try {
+      await deletePost(id);
+      const data = (await listPostsAdmin()) as BlogPostRow[];
+      setRows(data);
+      savePosts(data.map(rowToPost));
+    } catch (err) {
+      console.error(err);
+      alert(String(err));
     } finally {
       setBusy(false);
     }
   }
 
   function onPick(e: React.ChangeEvent<HTMLInputElement>) {
-    setFiles(Array.from(e.target.files ?? []));
-    e.target.value = "";
-  }
-
-  async function onDelete(id: string) {
-    if (!confirm("Delete post?")) return;
-    await deletePost(id);
-    // Remove the post from state and update localStorage.
-    setRows((r) => {
-      const next = r.filter((p) => p.id !== id);
-      // Sync updated list to localStorage.
-      syncToLocal(next);
-      return next;
-    });
+    const fs = Array.from(e.target.files || []);
+    setFiles((cur) => [...cur, ...fs]);
   }
 
   return (
-    <div className="grid gap-4">
-      <Panel title="New post" rightTag="compose.md">
-        <div className="grid gap-2 text-xs">
-          <input placeholder="Title" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1" />
-          <input placeholder="Custom slug (optional)" value={draft.slug} onChange={(e) => setDraft({ ...draft, slug: e.target.value })} className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1" />
-          <input placeholder="Summary" value={draft.summary} onChange={(e) => setDraft({ ...draft, summary: e.target.value })} className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1" />
-          <textarea placeholder="Content (Markdown-lite)" value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })} rows={8} className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1 font-mono" />
-          <label className="inline-flex items-center gap-2 text-xs">
-            <input type="checkbox" checked={draft.published} onChange={(e) => setDraft({ ...draft, published: e.target.checked })} /> Published
-          </label>
+    <Panel title="Posts" rightTag={`${rows.length}`}>
+      <div className="grid gap-3">
+        <div className="grid gap-2 sm:grid-cols-2">
           <div className="grid gap-2">
-            <label className="text-xs">Attachments (images/videos)</label>
-            <input type="file" multiple accept="image/*,video/*" onChange={onPick} className="block w-full text-sm" />
-            {files.length > 0 && <div className="text-xs opacity-70">{files.length} file(s) selected</div>}
+            <label className="text-xs uppercase opacity-70">Title</label>
+            <input value={draft.title} onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))} className="rounded border border-white/15 bg-white/5 px-3 py-2" placeholder="Post title" />
           </div>
-          <button disabled={busy} onClick={onCreate} className="inline-flex items-center gap-2 rounded border border-[#4a5a45] bg-[#3a4538] px-3 py-1 text-sm hover:border-[var(--primary)]">
-            <Save className="h-4 w-4" /> {busy ? "Saving..." : "Save post"}
-          </button>
+          <div className="grid gap-2">
+            <label className="text-xs uppercase opacity-70">Slug</label>
+            <input value={draft.slug} onChange={(e) => setDraft((d) => ({ ...d, slug: e.target.value }))} className="rounded border border-white/15 bg-white/5 px-3 py-2" placeholder="auto if blank" />
+          </div>
+          <div className="grid gap-2 sm:col-span-2">
+            <label className="text-xs uppercase opacity-70">Summary</label>
+            <input value={draft.summary} onChange={(e) => setDraft((d) => ({ ...d, summary: e.target.value }))} className="rounded border border-white/15 bg-white/5 px-3 py-2" placeholder="Short summary" />
+          </div>
+          <div className="grid gap-2 sm:col-span-2">
+            <label className="text-xs uppercase opacity-70">Content</label>
+            <textarea value={draft.content} onChange={(e) => setDraft((d) => ({ ...d, content: e.target.value }))} rows={6} className="rounded border border-white/15 bg-white/5 px-3 py-2" placeholder="Markdown or plain text" />
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={draft.published} onChange={(e) => setDraft((d) => ({ ...d, published: e.target.checked }))} />
+              Published
+            </label>
+          </div>
+          <div className="grid gap-2">
+            <label className="text-xs uppercase opacity-70">Attachments</label>
+            <input type="file" multiple accept="image/*,video/*" onChange={onPick} />
+            {files.length > 0 && <div className="text-xs opacity-70">{files.length} file(s) queued</div>}
+          </div>
+          <div className="sm:col-span-2">
+            <button disabled={busy} onClick={onCreate} className="inline-flex items-center gap-1 rounded border border-[#4a5a45] px-3 py-2 bg-[#3a4538] hover:bg-[#404b3f]">
+              <Save className="h-4 w-4" />
+              {busy ? "Saving..." : "Save post"}
+            </button>
+          </div>
         </div>
-      </Panel>
-      <Panel title="All posts" rightTag={`${rows.length}`}>
-        {rows.length === 0 ? (
-          <div className="text-sm opacity-70">No posts.</div>
-        ) : (
-          <div className="grid gap-3">
-            {rows.map((p) => (
-              <div key={p.id} className="rounded border border-[#4a5a45] p-3">
-                <div className="flex flex-wrap items-center gap-2 justify-between">
-                  <div className="font-medium text-[var(--accent)]">{p.title}</div>
+
+        <div className="border-t border-white/10 pt-3 grid gap-2">
+          {rows.length === 0 ? (
+            <div className="text-sm opacity-70">No posts yet.</div>
+          ) : (
+            rows.map((r) => (
+              <div key={r.id} className="flex items-center gap-3 rounded border border-[#4a5a45] p-2">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium">{r.title}</div>
                   <div className="text-xs opacity-70">
-                    {p.date} • {p.published ? "Published" : "Draft"}
+                    {r.slug} · {r.date ?? "—"} · {r.published ? "published" : "draft"}
                   </div>
                 </div>
-                <div className="text-xs opacity-80 break-all">/blog/{p.slug}</div>
-                {Array.isArray(p.attachments) && p.attachments.length > 0 && (
-                  <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                    {p.attachments.map((a: any) =>
-                      a.type === "video" ? (
-                        <video key={a.id} src={a.src} className="w-full h-auto rounded" muted autoPlay loop playsInline />
-                      ) : (
-                        <img key={a.id} src={a.src} className="w-full h-auto rounded" />
-                      )
-                    )}
-                  </div>
-                )}
-                <div className="mt-2 flex gap-2">
-                  <button
-                    onClick={() => window.dispatchEvent(new CustomEvent("kabuto:pre-navigate", { detail: { nextPath: `/blog/${p.slug}` } }))}
-                    className="inline-flex items-center gap-1 rounded border border-[#4a5a45] px-2 py-1 text-xs hover:border-[var(--primary)]"
-                  >
-                    <PencilLine className="h-4 w-4" /> Open
-                  </button>
-                  <button onClick={() => onDelete(p.id)} className="inline-flex items-center gap-1 rounded border border-[#4a5a45] px-2 py-1 text-xs hover:border-red-400">
-                    <Trash2 className="h-4 w-4" /> Delete
-                  </button>
-                </div>
+                <button onClick={() => onDelete(r.id)} className="inline-flex items-center gap-1 rounded border border-[#4a5a45] px-2 py-1 hover:border-red-400">
+                  <Trash2 className="h-4 w-4" /> Delete
+                </button>
               </div>
-            ))}
-          </div>
-        )}
-      </Panel>
-    </div>
+            ))
+          )}
+        </div>
+      </div>
+    </Panel>
   );
 }
 
-/* ───────────────────────── Portfolio (media) ───────────────────────── */
+/* ───────────────────────── Portfolio (Supabase storage) ───────────────────────── */
+
 function AdminPortfolio() {
   const [items, setItems] = React.useState<MediaItem[]>([]);
   const [busy, setBusy] = React.useState(false);
@@ -382,95 +375,98 @@ function AdminPortfolio() {
 
   React.useEffect(() => {
     void refresh();
-    const onData = async (e: any) => {
-      if (e?.detail?.scope === "portfolio") await refresh();
-    };
-    window.addEventListener("kabuto:data", onData);
-    return () => window.removeEventListener("kabuto:data", onData);
   }, [refresh]);
 
-  async function onPick(ev: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(ev.target.files ?? []);
+  // ⚠️ single-arg addPortfolioFiles — progress is synthetic
+  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
     if (!files.length) return;
+
     setBusy(true);
     setProgress(0);
-    const tick = setInterval(() => setProgress((p) => (p === null || p >= 90 ? 90 : p + 3)), 80);
+
+    let finished = false;
+    const tick = window.setInterval(() => {
+      setProgress((p) => {
+        const cur = p ?? 0;
+        if (finished) return cur;
+        return Math.min(90, cur + 3);
+      });
+    }, 80);
+
     try {
-      await addPortfolioFiles(files);
+      await addPortfolioFiles(files); // <-- ONE ARG
+      finished = true;
       setProgress(100);
-      setTimeout(() => setProgress(null), 350);
+      await refresh();
     } finally {
       clearInterval(tick);
       setBusy(false);
-      await refresh();
-      ev.target.value = "";
+      setTimeout(() => setProgress(null), 350);
+      (e.target as HTMLInputElement).value = "";
     }
   }
+
   async function onDrop(ev: React.DragEvent) {
     ev.preventDefault();
     const files = Array.from(ev.dataTransfer.files ?? []);
     if (!files.length) return;
+
     setBusy(true);
     setProgress(0);
-    const tick = setInterval(() => setProgress((p) => (p === null || p >= 90 ? 90 : p + 3)), 80);
+
+    let finished = false;
+    const tick = window.setInterval(() => {
+      setProgress((p) => {
+        const cur = p ?? 0;
+        if (finished) return cur;
+        return Math.min(90, cur + 3);
+      });
+    }, 80);
+
     try {
-      await addPortfolioFiles(files);
+      await addPortfolioFiles(files); // <-- ONE ARG
+      finished = true;
       setProgress(100);
-      setTimeout(() => setProgress(null), 350);
+      await refresh();
     } finally {
       clearInterval(tick);
       setBusy(false);
-      await refresh();
+      setTimeout(() => setProgress(null), 350);
     }
   }
 
   return (
-    <div className="grid gap-4">
-      <Panel title="Add portfolio item" rightTag="upload">
-        <div
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={onDrop}
-          className="rounded-lg border border-white/15 bg-white/5 p-6 flex flex-col items-center gap-3"
-        >
-          <div className="text-sm opacity-80">Drag & drop images/videos here</div>
-          <label className="inline-flex items-center gap-2 text-sm cursor-pointer px-3 py-2 rounded border border-white/15 bg-white/10 hover:bg-white/15">
-            <input type="file" multiple accept="image/*,video/*" className="hidden" onChange={onPick} />
-            <span className="opacity-80">Select files</span>
-          </label>
-          {busy && (
-            <div className="mt-2 text-xs">
-              Uploading... {progress !== null ? `${progress}%` : ""}
+    <Panel title="Portfolio" rightTag={`${items.length}`}>
+      <div onDragOver={(e) => e.preventDefault()} onDrop={onDrop} className="rounded-lg border border-white/15 bg-white/5 p-6 flex flex-col items-center gap-3">
+        <div className="text-sm opacity-80">Drag & drop images/videos here</div>
+        <label className="inline-flex items-center gap-2 text-sm cursor-pointer px-3 py-2 rounded border border-white/15 bg-white/10 hover:bg-white/15">
+          <input type="file" multiple accept="image/*,video/*" className="hidden" onChange={onPick} />
+          <span className="opacity-80">Select files</span>
+        </label>
+        {busy && <div className="mt-2 text-xs">Uploading… {progress !== null ? `${progress}%` : ""}</div>}
+      </div>
+
+      {items.length === 0 ? (
+        <div className="text-sm opacity-70 mt-3">No items.</div>
+      ) : (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+          {items.map((item) => (
+            <div key={item.id} className="relative rounded border border-[#4a5a45] p-2">
+              {item.type === "video" ? <video src={item.src} className="w-full h-auto rounded" controls /> : <img src={item.src} className="w-full h-auto rounded" alt="" />}
+              <button
+                onClick={() => {
+                  if (!confirm("Delete item?")) return;
+                  deletePortfolioItem(item.id).then(() => refresh());
+                }}
+                className="absolute top-1 right-1 inline-flex items-center gap-1 rounded border border-[#4a5a45] px-2 py-1 text-xs hover:border-red-400"
+              >
+                <Trash2 className="h-4 w-4" /> Delete
+              </button>
             </div>
-          )}
+          ))}
         </div>
-      </Panel>
-      <Panel title="Portfolio" rightTag={`${items.length}`}
-      >
-        {items.length === 0 ? (
-          <div className="text-sm opacity-70">No items.</div>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-            {items.map((item) => (
-              <div key={item.id} className="relative rounded border border-[#4a5a45] p-2">
-                {item.type === "video" ? (
-                  <video src={item.src} className="w-full h-auto rounded" controls />
-                ) : (
-                  <img src={item.src} className="w-full h-auto rounded" alt="Portfolio item" />
-                )}
-                <button
-                  onClick={() => {
-                    if (!confirm("Delete item?")) return;
-                    deletePortfolioItem(item.id).then(() => refresh());
-                  }}
-                  className="absolute top-1 right-1 inline-flex items-center gap-1 rounded border border-[#4a5a45] px-2 py-1 text-xs hover:border-red-400"
-                >
-                  <Trash2 className="h-4 w-4" /> Delete
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </Panel>
-    </div>
+      )}
+    </Panel>
   );
 }
