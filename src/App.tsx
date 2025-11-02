@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { createPortal } from "react-dom";
 
-const APP_BUILD = "2025-11-02.4"; // bump on each deploy
+const APP_BUILD = "2025-11-02.2"; // bump on each deploy
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -36,48 +36,8 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-// --- HOTFIX: remove hard deps on optional preload/manifest modules ---
-type PreloadAs = "image" | "video" | "audio";
-const IMAGES: string[] = []; // you can fill these later
-const VIDEOS: string[] = [];
-const AUDIOS: string[] = [];
-
-/** Inject <link rel="preload"> tags (no-op safe) */
-function injectPreloadLinks(list: string[], as: PreloadAs) {
-  try {
-    list.forEach((href) => {
-      const l = document.createElement("link");
-      l.rel = "preload";
-      l.as = as;
-      l.href = href;
-      document.head.appendChild(l);
-    });
-  } catch {}
-}
-
-/** Best-effort warm decode (safe no-op) */
-async function warmDecode(opts: { images?: string[]; videos?: string[]; audios?: string[] }) {
-  try {
-    (opts.images || []).forEach((src) => {
-      const img = new Image();
-      (img as any).decoding = "async";
-      img.src = src;
-    });
-    // videos/audios intentionally skipped to stay no-op and fast
-  } catch {}
-}
-
-/** Safe accessor for a ready service worker (won't throw) */
-function getActiveSW(): ServiceWorker | null {
-  try {
-    // controller exists after first SW claim; ready().active also works after install
-    // We try controller first for instant availability
-    if (navigator.serviceWorker?.controller) return navigator.serviceWorker.controller as any;
-    return null;
-  } catch {
-    return null;
-  }
-}
+import { IMAGES, VIDEOS, AUDIOS } from "./assets.manifest";
+import { injectPreloadLinks, warmDecode } from "./utils/preload";
 
 /* ╭──────────────────────────────────────────────────────────────────────────╮
    │ Types                                                                    │
@@ -115,9 +75,6 @@ type PortfolioItem = {
   mime?: string;
   createdAt: number;
   published: boolean;
-
-  /** local-only preview URL (blob:...) to avoid grey tile before SW saves */
-  previewUrl?: string | null;
 };
 
 /* ╭──────────────────────────────────────────────────────────────────────────╮
@@ -388,9 +345,6 @@ function LabHomePage() {
           className="w-full rounded-[6px] border border-[#4a5a45] shadow-[0_0_0_1px_#2d362b] object-cover"
           loading="eager"
           decoding="async"
-          onError={(e) => {
-            e.currentTarget.style.display = "none";
-          }}
         />
       </div>
 
@@ -482,9 +436,7 @@ function LabHomePage() {
                     >
                       <span className="flex items-center justify-center gap-2 text-[var(--accent)] tracking-wide">
                         <span className="h-2 w-2 rounded-sm bg-[var(--primary)] shadow-[0_0_8px_var(--primary)]" />
-                        <span className="uppercase text-[13px]">
-                          {s.label}
-                        </span>
+                        <span className="uppercase text-[13px]">{s.label}</span>
                       </span>
                     </a>
                   );
@@ -515,7 +467,6 @@ function LabHomePage() {
                 className="w-full h-auto object-cover"
                 loading="lazy"
                 decoding="async"
-                onError={(e) => (e.currentTarget.style.display = "none")}
               />
             </div>
           </div>
@@ -552,7 +503,11 @@ function isInternalKabuto(url: string) {
   }
 }
 
-/** Centralized navigate */
+/** Centralized navigate:
+ *  - Internal routes: emit a pre-navigate event so the root can run
+ *    the black → splash → page sequence *before* pushState.
+ *  - External routes: open in new tab, but still ping a UI click so SFX plays.
+ */
 function navigate(url: string) {
   try {
     const u = new URL(url, window.location.origin);
@@ -627,12 +582,7 @@ function NotepadWindow({ onClose }: { onClose: () => void }): JSX.Element {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[200] bg-black/30"
-      onMouseDown={() => {
-        /* swallow bg */
-      }}
-    >
+    <div className="fixed inset-0 z-[200] bg-black/30" onMouseDown={() => {}}>
       <div
         className="bg-[#c0c0c0] fixed"
         style={{ ...bevelDown, width: 520, left: pos.x, top: pos.y }}
@@ -671,7 +621,6 @@ function NotepadWindow({ onClose }: { onClose: () => void }): JSX.Element {
             src={NOTEPAD_CHROME}
             alt=""
             className="absolute inset-0 w-full h-full object-cover opacity-[0.10] pointer-events-none select-none"
-            onError={(e) => (e.currentTarget.style.display = "none")}
           />
           <div className="relative p-3 text-[13px] leading-6 text-black">
             <div>
@@ -751,12 +700,7 @@ function PortfolioWin95Window({
       >
         <div
           className="flex items-center justify-between px-2 select-none"
-          style={{
-            background: "#000080",
-            borderBottom: "1px solid #000040",
-            color: "#fff",
-            height: 28,
-          }}
+          style={{ background: "#000080", borderBottom: "1px solid #000040", color: "#fff", height: 28 }}
         >
           <div className="text-[12px]">My Work</div>
           <button
@@ -772,12 +716,7 @@ function PortfolioWin95Window({
 
         <div
           className="px-2 py-1 text-[12px] flex items-center gap-3"
-          style={{
-            background: "#dfdfdf",
-            borderBottom: "1px solid #a0a0a0",
-            color: "#000",
-            height: 26,
-          }}
+          style={{ background: "#dfdfdf", borderBottom: "1px solid #a0a0a0", color: "#000", height: 26 }}
         >
           <span>File</span>
           <span>Edit</span>
@@ -812,7 +751,6 @@ function PortfolioWin95Window({
                         objectFit: "contain",
                         verticalAlign: "top",
                       }}
-                      onError={(e) => (e.currentTarget.style.display = "none")}
                     />
                   ) : (
                     <video
@@ -828,7 +766,6 @@ function PortfolioWin95Window({
                         objectFit: "contain",
                         verticalAlign: "top",
                       }}
-                      onError={(e) => (e.currentTarget.style.display = "none")}
                     />
                   )}
                 </button>
@@ -839,12 +776,7 @@ function PortfolioWin95Window({
 
         <div
           className="px-2 text-[12px] flex items-center justify-between"
-          style={{
-            background: "#dfdfdf",
-            borderTop: "1px solid #a0a0a0",
-            color: "#404040",
-            height: 24,
-          }}
+          style={{ background: "#dfdfdf", borderTop: "1px solid #a0a0a0", color: "#404040", height: 24 }}
         >
           <span>Ready</span>
           <span>Items: {items.length}</span>
@@ -883,7 +815,6 @@ function PortfolioWin95Window({
                 src={items[viewer].src}
                 alt=""
                 className="max-w-[94vw] max-h-[88vh] object-contain"
-                onError={(e) => (e.currentTarget.style.display = "none")}
               />
             ) : (
               <video
@@ -894,7 +825,6 @@ function PortfolioWin95Window({
                 loop
                 playsInline
                 controls={false}
-                onError={(e) => (e.currentTarget.style.display = "none")}
               />
             )}
           </div>
@@ -903,6 +833,186 @@ function PortfolioWin95Window({
     </div>
   );
 }
+
+// --- single, canonical IPadOverlay (used by PortfolioPage) ---
+const IPadOverlay: React.FC<{
+  kind: "portfolio" | "rates" | "contact";
+  visible: boolean;
+  onClose: () => void;
+}> = ({ kind, visible, onClose }) => {
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[215]"
+      style={{
+        background: visible ? "rgba(0,0,0,.85)" : "rgba(0,0,0,0)",
+        transition: "background .35s ease",
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        padding: "min(6vh, 32px) min(3vw, 24px)",
+      }}
+      aria-hidden={!visible}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative"
+        style={{
+          width: "min(900px, 92vw)",
+          aspectRatio: "3/2",
+          filter: "drop-shadow(0 20px 60px rgba(0,0,0,.6))",
+          // slide from offscreen bottom
+          transform: `translateY(${visible ? "0%" : "120%"}) scale(${
+            visible ? 1 : 0.98
+          })`,
+          opacity: visible ? 1 : 0,
+          transition:
+            "transform .55s cubic-bezier(.22,1,.36,1), opacity .35s ease",
+        }}
+      >
+        {/* iPad chrome */}
+        <img
+          src={PF_IPAD}
+          alt="iPad frame"
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "contain",
+            display: "block",
+          }}
+          draggable={false}
+        />
+
+        {/* screen contents */}
+        <div
+          className="absolute inset-[6%]"
+          style={{
+            background: "#101410",
+            borderRadius: 18,
+            overflow: "hidden",
+            display: "grid",
+            gridTemplateRows: "40px 1fr",
+            border: "1px solid rgba(215,230,182,.15)",
+          }}
+        >
+          <div
+            className="flex items-center justify-between px-3"
+            style={{
+              background: "#1b231b",
+              color: "#d7e6b6",
+              borderBottom: "1px solid rgba(215,230,182,.12)",
+            }}
+          >
+            <div className="text-sm tracking-wide">
+              {kind === "rates"
+                ? "Editing rates"
+                : kind === "contact"
+                ? "Contact"
+                : "My Work"}
+            </div>
+            <button
+              onClick={onClose}
+              className="h-7 px-3 rounded text-sm"
+              style={{ background: "#2b352a", border: "1px solid #445241" }}
+              title="Close"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="p-3 overflow-auto text-sm">
+            {kind === "rates" && (
+              <div className="space-y-3">
+                <p className="opacity-85">
+                  Full price list lives on{" "}
+                  <a
+                    href="/commissions"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      navigate("/commissions");
+                    }}
+                    className="underline"
+                  >
+                    /commissions
+                  </a>
+                  .
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="rounded border border-[#445241] p-2">
+                    <div className="text-[var(--accent)] font-medium mb-1">
+                      Short-form
+                    </div>
+                    <div className="text-xs opacity-85">
+                      ≤30s £25 • 31–60s £35 • 61–120s £50
+                    </div>
+                  </div>
+                  <div className="rounded border border-[#445241] p-2">
+                    <div className="text-[var(--accent)] font-medium mb-1">
+                      YouTube
+                    </div>
+                    <div className="text-xs opacity-85">
+                      ≤6m £80 • 6–12m £120 • 12–20m £170
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {kind === "contact" && (
+              <div className="space-y-2">
+                <div>
+                  email —{" "}
+                  <a className="underline" href="mailto:contact@kabuto.studio">
+                    contact@kabuto.studio
+                  </a>
+                </div>
+                <div>discord — kabuto.</div>
+                <div>
+                  IG —{" "}
+                  <a
+                    className="underline"
+                    href="https://instagram.com/kbt2k"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    kbt2k
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {kind === "portfolio" && (
+              <div className="space-y-3">
+                <p className="opacity-85">
+                  Tap <strong>Open “My Work”</strong> to view the full Win95
+                  gallery.
+                </p>
+                <button
+                  onClick={() => {
+                    onClose();
+                    // optional: setPfWinOpen(true); // hook from PortfolioPage if desired
+                  }}
+                  className="rounded px-3 py-2"
+                  style={{ background: "#2b352a", border: "1px solid #445241" }}
+                >
+                  Open “My Work”
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 /* ───────────────────────────── end window ──────────────────────────── */
 
@@ -936,10 +1046,10 @@ function useCursorTrail(enabled: boolean) {
       pts[0].x += (head.x - pts[0].x) * 0.25;
       pts[0].y += (head.y - pts[0].y) * 0.25;
 
-      // followers ease toward the previous point (fixed Y easing)
+      // followers ease toward the previous point
       for (let i = 1; i < pts.length; i++) {
         pts[i].x += (pts[i - 1].x - pts[i].x) * 0.25;
-        pts[i].y += (pts[i - 1].y - pts[i].y) * 0.25;
+        pts[i].y += (pts[i - 1].y - pts[i].y) * 0.25; // fixed
       }
 
       const idle = Date.now() - lastMove > 1200;
@@ -978,35 +1088,10 @@ function RootDesktopPage() {
   ]);
 
   const icons = [
-    {
-      x: "18vw",
-      y: "18vh",
-      label: "Design portfolio",
-      icon: ICON_PORTFOLIO,
-      onOpen: () => navigate("/portfolio"),
-    },
-    {
-      x: "26vw",
-      y: "26vh",
-      label: "Lab // blog",
-      icon: ICON_LAB,
-      onOpen: () => navigate("/lab"),
-    },
-    {
-      x: "34vw",
-      y: "20vh",
-      label: "buy cool stuff IRL",
-      icon: ICON_IRL,
-      onOpen: () =>
-        window.open("https://wnacry.com", "_blank", "noopener,noreferrer"),
-    },
-    {
-      x: "42vw",
-      y: "26vh",
-      label: "contact info",
-      icon: ICON_CONTACT,
-      onOpen: () => setContactOpen(true),
-    },
+    { x: "18vw", y: "18vh", label: "Design portfolio", icon: ICON_PORTFOLIO, onOpen: () => navigate("/portfolio") },
+    { x: "26vw", y: "26vh", label: "Lab // blog", icon: ICON_LAB, onOpen: () => navigate("/lab") },
+    { x: "34vw", y: "20vh", label: "buy cool stuff IRL", icon: ICON_IRL, onOpen: () => window.open("https://wnacry.com", "_blank", "noopener,noreferrer") },
+    { x: "42vw", y: "26vh", label: "contact info", icon: ICON_CONTACT, onOpen: () => setContactOpen(true) },
   ];
 
   const [cacheBust] = useState(() => String(Date.now()));
@@ -1038,14 +1123,7 @@ function RootDesktopPage() {
           }}
           title={it.label}
         >
-          <img
-            src={it.icon}
-            alt=""
-            className="h-20 w-20 object-contain"
-            loading="eager"
-            decoding="async"
-            onError={(e) => (e.currentTarget.style.display = "none")}
-          />
+          <img src={it.icon} alt="" className="h-20 w-20 object-contain" loading="eager" decoding="async" />
           <div className="mt-1 text-center text-[13px] leading-4">
             <span className="inline-block px-1.5 py-[3px] rounded-sm bg-black/40 text-white shadow-[0_0_0_1px_rgba(255,255,255,.15)]">
               {it.label}
@@ -1065,13 +1143,7 @@ function RootDesktopPage() {
             className="h-20 w-20 object-contain"
             loading="eager"
             decoding="async"
-            onError={(e) => (e.currentTarget.style.display = "none")}
           />
-          <div className="mt-1 text-center text-[13px] leading-4">
-            <span className="inline-block px-1.5 py-[3px] rounded-sm bg-black/40 text-white shadow-[0_0_0_1px_rgba(255,255,255,.15)]">
-              you are visitor number:
-            </span>
-          </div>
         </div>
 
         <img
@@ -1091,6 +1163,8 @@ function RootDesktopPage() {
 /* ╭──────────────────────────────────────────────────────────────────────────╮
    │ Portfolio Desktop (/portfolio)                                           │
    ╰──────────────────────────────────────────────────────────────────────────╯ */
+
+/* ─────────────────────────────── Portfolio (CS scene) ─────────────────────────────── */
 
 function useStageAnchor() {
   const [m, setM] = React.useState({ scale: 1, ox: 0, oy: 0 });
@@ -1119,9 +1193,7 @@ function useAlphaHover(
   persons: Person[],
   anchor: { scale: number; ox: number; oy: number },
 ) {
-  const canv = React.useRef<Record<string, CanvasRenderingContext2D | null>>(
-    {},
-  );
+  const canv = React.useRef<Record<string, CanvasRenderingContext2D | null>>({});
   const [hover, setHover] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -1169,8 +1241,8 @@ function useAlphaHover(
 }
 
 function PortfolioPage(): JSX.Element {
+  // ---------- SFX ----------
   const fireRef = React.useRef<HTMLAudioElement | null>(null);
-
   React.useEffect(() => {
     const a = new Audio("/sfx/fire.mp3");
     a.preload = "auto";
@@ -1186,6 +1258,7 @@ function PortfolioPage(): JSX.Element {
     } catch {}
   }, []);
 
+  // ---------- Preload scene ----------
   usePreloadImages([
     "/assets/kabuto/portfolio/BG.png",
     "/assets/kabuto/portfolio/overlay.png",
@@ -1196,8 +1269,10 @@ function PortfolioPage(): JSX.Element {
     PF_VIEWMODEL,
   ]);
 
+  // ---------- Stage sizing ----------
   const m = useStageAnchor();
 
+  // ---------- Viewmodel sway ----------
   const [mouse, setMouse] = React.useState({ x: 0.5, y: 0.5 });
   React.useEffect(() => {
     const onMove = (e: PointerEvent) => {
@@ -1211,6 +1286,9 @@ function PortfolioPage(): JSX.Element {
   const gunTX = (mouse.x - 0.5) * 32;
   const gunTY = (mouse.y - 0.5) * 18;
 
+  // ---------- iPad overlay state ----------
+  const [pad, setPad] = React.useState<null | "portfolio" | "rates" | "contact">(null);
+  const [padVisible, setPadVisible] = React.useState(false);
   const [gunDown, setGunDown] = React.useState(false);
   const anim = React.useRef(false);
 
@@ -1219,55 +1297,42 @@ function PortfolioPage(): JSX.Element {
     anim.current = true;
     fire();
     setGunDown(true);
-    await new Promise((r) => setTimeout(r, 380));
-
-    // route instead of toggling unused pad/padVisible
-    if (kind === "rates") {
-      navigate("/commissions");
-    } else if (kind === "contact") {
-      navigate("/"); // contact lives on the root (Notepad)
-    }
-
-    // lift gun back up shortly after (purely visual)
-    setTimeout(() => setGunDown(false), 420);
+    await new Promise((r) => setTimeout(r, 380)); // bring gun down first
+    setPad(kind);
+    await new Promise((r) => setTimeout(r, 20)); // mount iPad
+    setPadVisible(true);
+    await new Promise((r) => setTimeout(r, 420)); // let the fade/slide finish
     anim.current = false;
   };
 
-  const [pfWinOpen, setPfWinOpen] = React.useState(false);
+  const closePad = React.useCallback(async () => {
+    if (!pad) return;
+    setPadVisible(false);
+    await new Promise((r) => setTimeout(r, 250)); // exit anim
+    setPad(null);
+    setGunDown(false); // return the gun
+  }, [pad]);
 
+  // ---------- Hit-test on people ----------
   const persons = React.useMemo(
     () => [
-      {
-        key: "rates" as const,
-        src: "/assets/kabuto/portfolio/person01.png",
-        onClick: () => openPad("rates"),
-      },
-      {
-        key: "portfolio" as const,
-        src: "/assets/kabuto/portfolio/person02.png",
-        onClick: () => {
-          fire();
-          setPfWinOpen(true);
-        },
-      },
-      {
-        key: "contact" as const,
-        src: "/assets/kabuto/portfolio/person03.png",
-        onClick: () => openPad("contact"),
-      },
+      { key: "rates" as const, src: "/assets/kabuto/portfolio/person01.png", onClick: () => openPad("rates") },
+      { key: "portfolio" as const, src: "/assets/kabuto/portfolio/person02.png", onClick: () => { fire(); setPfWinOpen(true); } },
+      { key: "contact" as const, src: "/assets/kabuto/portfolio/person03.png", onClick: () => openPad("contact") },
     ],
     [openPad, fire],
   );
-
   const hover = useAlphaHover(
     persons.map((p) => ({ key: p.key, src: p.src, onClick: p.onClick })),
     m,
   );
 
+  // ---------- Portfolio items for Win95 window ----------
+  const [pfWinOpen, setPfWinOpen] = React.useState(false);
   const [pfItems, setPfItems] = React.useState<PortfolioItem[]>(() =>
     loadPortfolio().filter((p) => p.published),
   );
-  useEffect(() => {
+  React.useEffect(() => {
     const onChange = (e: any) => {
       if (e.detail?.type === "portfolio") {
         setPfItems(loadPortfolio().filter((p) => p.published));
@@ -1277,6 +1342,7 @@ function PortfolioPage(): JSX.Element {
     return () => window.removeEventListener("kabuto:data", onChange as any);
   }, []);
 
+  // ---------- Render ----------
   return (
     <div className="fixed inset-0 overflow-hidden" style={{ background: "#000" }}>
       <div
@@ -1291,18 +1357,16 @@ function PortfolioPage(): JSX.Element {
           zIndex: 1,
         }}
       >
+        {/* Background */}
         <img
           src="/assets/kabuto/portfolio/BG.png"
           alt=""
           draggable={false}
           className="absolute left-0 top-0"
           style={{ width: 1920, height: 1080 }}
-          onError={(e) => {
-            e.currentTarget.removeAttribute("src");
-            e.currentTarget.style.background = "#000";
-          }}
         />
 
+        {/* People layers with hover scale */}
         {persons.map((p) => (
           <img
             key={p.key}
@@ -1319,20 +1383,18 @@ function PortfolioPage(): JSX.Element {
               transition: "transform 140ms ease",
               filter: "drop-shadow(0 2px 12px rgba(0,0,0,.45))",
             }}
-            onError={(e) => {
-              e.currentTarget.style.opacity = "0";
-            }}
           />
         ))}
 
+        {/* Overlay */}
         <img
           src="/assets/kabuto/portfolio/overlay.png"
           alt=""
           className="absolute left-0 top-0 pointer-events-none"
           style={{ width: 1920, height: 1080, zIndex: 3 }}
-          onError={(e) => (e.currentTarget.style.opacity = "0")}
         />
 
+        {/* Click catcher */}
         <button
           aria-label={hover ?? "scene"}
           onClick={() => {
@@ -1350,6 +1412,7 @@ function PortfolioPage(): JSX.Element {
         />
       </div>
 
+      {/* Viewmodel gun */}
       <img
         src={PF_VIEWMODEL}
         alt=""
@@ -1366,9 +1429,9 @@ function PortfolioPage(): JSX.Element {
           objectFit: "contain",
           zIndex: 4,
         }}
-        onError={(e) => (e.currentTarget.style.display = "none")}
       />
 
+      {/* Win95 gallery (middle person) */}
       {pfWinOpen && (
         <PortfolioWin95Window
           items={pfItems.map((p) =>
@@ -1378,6 +1441,11 @@ function PortfolioPage(): JSX.Element {
           )}
           onClose={() => setPfWinOpen(false)}
         />
+      )}
+
+      {/* iPad overlay (left/right people) */}
+      {pad && (
+        <IPadOverlay kind={pad} visible={padVisible} onClose={closePad} />
       )}
     </div>
   );
@@ -1705,7 +1773,6 @@ function EsportsPage() {
                 className="w-full h-auto object-cover"
                 loading="lazy"
                 decoding="async"
-                onError={(e) => (e.currentTarget.style.display = "none")}
               />
             </div>
           ))}
@@ -1792,7 +1859,6 @@ function CommissionsPage() {
                 className="h-full w-full object-cover"
                 loading="lazy"
                 decoding="async"
-                onError={(e) => (e.currentTarget.style.display = "none")}
               />
             </div>
           ))}
@@ -1806,7 +1872,7 @@ function CommissionsPage() {
               key={gi}
               className="rounded-[6px] border border-[#4a5a45] bg-[#3a4538]"
             >
-              <div className="px-2.5 py-1.5 border-b border-[#4a5a45] text-[var(--accent)] text-[13px]">
+              <div className="px-2.5 py-1.5 border-b border-[#4a5a45] text-[13px] text-[var(--accent)]">
                 {group.title}
               </div>
               <div className="p-2.5">
@@ -1880,33 +1946,18 @@ function usePendingUploads() {
 
       if (type === "cache-put-ok") {
         setList((L) =>
-          L.map((x) =>
-            x.id === payload.id ? { ...x, status: "done" } : x,
-          ),
+          L.map((x) => (x.id === payload.id ? { ...x, status: "done" } : x)),
         );
         // remove a little after success
         setTimeout(() => {
           setList((L) => L.filter((x) => x.id !== payload.id));
         }, 1200);
-
-        // tell anyone interested that local/<bucket>/<id> is now live
-        window.dispatchEvent(
-          new CustomEvent("kabuto:local-ready", {
-            detail: {
-              bucket: payload.bucket,
-              id: payload.id,
-              url: localUrl(payload.bucket, payload.id),
-            },
-          }),
-        );
       } else if (type === "cache-put-error") {
         setList((L) =>
-          L.map((x) =>
-            x.id === payload.id ? { ...x, status: "error" } : x,
-          ),
+          L.map((x) => (x.id === payload.id ? { ...x, status: "error" } : x)),
         );
       } else if (type === "cache-put-begin") {
-        // supported by newer sw.js; harmless if not sent
+        // supported by your newer sw.js; harmless if not sent
         setList((L) => {
           if (L.some((x) => x.id === payload.id)) return L;
           return [
@@ -1923,10 +1974,7 @@ function usePendingUploads() {
     };
 
     window.addEventListener("kabuto:upload-begin", addLocalBegin as any);
-
-    // Guard message listener for SW
-    const sw = getActiveSW();
-    if (sw) navigator.serviceWorker!.addEventListener("message", onSW);
+    navigator.serviceWorker?.addEventListener("message", onSW);
 
     const beforeUnload = (ev: BeforeUnloadEvent) => {
       if (list.some((x) => x.status === "pending")) {
@@ -1937,8 +1985,11 @@ function usePendingUploads() {
     window.addEventListener("beforeunload", beforeUnload);
 
     return () => {
-      window.removeEventListener("kabuto:upload-begin", addLocalBegin as any);
-      if (sw) navigator.serviceWorker!.removeEventListener("message", onSW);
+      window.removeEventListener(
+        "kabuto:upload-begin",
+        addLocalBegin as any,
+      );
+      navigator.serviceWorker?.removeEventListener("message", onSW);
       window.removeEventListener("beforeunload", beforeUnload);
     };
   }, [list]);
@@ -2170,7 +2221,9 @@ function AdminEvents() {
           <input
             placeholder="Location"
             value={draft.location}
-            onChange={(e) => setDraft({ ...draft, location: e.target.value })}
+            onChange={(e) =>
+              setDraft({ ...draft, location: e.target.value })
+            }
             className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1"
           />
           <input
@@ -2182,7 +2235,9 @@ function AdminEvents() {
           <input
             placeholder="Placement (e.g., 12/128 or 1st)"
             value={draft.placement}
-            onChange={(e) => setDraft({ ...draft, placement: e.target.value })}
+            onChange={(e) =>
+              setDraft({ ...draft, placement: e.target.value })
+            }
             className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1"
           />
           <label className="inline-flex items-center gap-2 px-1">
@@ -2313,15 +2368,8 @@ function AdminEvents() {
   );
 }
 
-/* ───────────────────── Blog media uploads inside AdminPosts — fixed previews ───────────────────── */
-type BlogMedia = {
-  id: string;
-  url: string; // /local/blog/<id>
-  filename: string;
-  mime: string;
-  /** blob:… for instant preview before SW saves the /local entry */
-  previewUrl: string;
-};
+/* ───────────────────── Blog media uploads inside AdminPosts ───────────────────── */
+type BlogMedia = { id: string; url: string; filename: string; mime: string };
 
 function AdminPosts() {
   const [rows, setRows] = useState<Post[]>(() => loadPosts());
@@ -2340,77 +2388,55 @@ function AdminPosts() {
   // session-only list for quick inserts
   const [media, setMedia] = useState<BlogMedia[]>([]);
 
-  // When SW confirms a blog item is saved, refresh any cards still showing preview
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       const { type, payload } = (e.data || {}) as any;
       if (type === "cache-put-ok" && payload?.id && payload?.bucket === "blog") {
-        const theUrl = localUrl("blog", payload.id);
-        // Force any <img>/<video> currently on preview to switch to /local path
-        const imgs = document.querySelectorAll<HTMLImageElement>(
-          `img[data-local-id="${payload.id}"]`,
-        );
-        imgs.forEach((img) => {
-          if (img.src !== theUrl) img.src = theUrl;
-        });
-        const vids = document.querySelectorAll<HTMLVideoElement>(
-          `video[data-local-id="${payload.id}"]`,
-        );
-        vids.forEach((v) => {
-          if (v.src !== theUrl) v.src = theUrl;
-        });
+        // SW confirmation; URL is deterministic so nothing to change
       }
     };
-    const sw = getActiveSW();
-    if (sw) navigator.serviceWorker!.addEventListener("message", onMsg);
-    return () => {
-      if (sw) navigator.serviceWorker!.removeEventListener("message", onMsg);
-    };
+    navigator.serviceWorker?.addEventListener("message", onMsg);
+    return () => navigator.serviceWorker?.removeEventListener("message", onMsg);
   }, []);
+
+  async function sendToSW(
+    file: File,
+    bucket: "blog" | "portfolio" = "blog",
+    preId?: string,
+  ) {
+    const id = preId || uid();
+    const reg = await navigator.serviceWorker.ready.catch(() => undefined);
+    window.dispatchEvent(
+      new CustomEvent("kabuto:upload-begin", {
+        detail: { id, filename: file.name, bucket: "blog" },
+      }),
+    );
+
+    if (reg?.active) {
+      reg.active.postMessage({
+        type: "cache-put",
+        payload: { id, blob: file, bucket },
+      });
+    } else {
+      alert("Service worker not active; cannot store media.");
+    }
+    return id;
+  }
 
   async function handlePickFiles(files: FileList | null) {
     if (!files || !files.length) return;
-
     for (const f of Array.from(files)) {
       const id = uid();
-      const local = localUrl("blog", id);
-      const temp = URL.createObjectURL(f); // instant preview
-
-      // Show immediately with temp preview, while rendering tries /local first (fallback to temp)
+      const url = localUrl("blog", id);
       const item: BlogMedia = {
         id,
-        url: local,
+        url,
         filename: f.name,
         mime: f.type || "",
-        previewUrl: temp,
       };
+      // show immediately with stable URL
       setMedia((m) => [item, ...m]);
-
-      // Announce upload begin for status bar
-      window.dispatchEvent(
-        new CustomEvent("kabuto:upload-begin", {
-          detail: { id, filename: f.name, bucket: "blog" },
-        }),
-      );
-
-      // Send to SW (guarded)
-      try {
-        const reg = await navigator.serviceWorker.ready.catch(() => undefined);
-        const active = reg?.active ?? getActiveSW();
-        if (active) {
-          active.postMessage({
-            type: "cache-put",
-            payload: { id, blob: f, bucket: "blog" },
-          });
-        } else {
-          console.warn("Service worker not active; cannot store media yet.");
-        }
-      } catch {
-        console.warn("SW postMessage failed; preview will persist until SW ready.");
-      }
-
-      // Cleanup temp later
-      setTimeout(() => URL.revokeObjectURL(temp), 60_000);
+      void sendToSW(f, "blog", id);
     }
   }
 
@@ -2418,9 +2444,9 @@ function AdminPosts() {
     setDraft((d) => ({
       ...d,
       content:
-        (d.content
-          ? d.content + (d.content.endsWith("\n") ? "" : "\n")
-          : "") + text + "\n",
+        (d.content ? d.content + (d.content.endsWith("\n") ? "" : "\n") : "") +
+        text +
+        "\n",
     }));
   }
 
@@ -2544,14 +2570,7 @@ function AdminPosts() {
                         >
                           {isImg ? (
                             <img
-                              data-local-id={m.id}
                               src={m.url}
-                              onError={(e) => {
-                                // while /local is not ready, show temp preview
-                                if (e.currentTarget.src !== m.previewUrl) {
-                                  e.currentTarget.src = m.previewUrl;
-                                }
-                              }}
                               alt=""
                               style={{
                                 maxHeight: 140,
@@ -2561,12 +2580,7 @@ function AdminPosts() {
                             />
                           ) : (
                             <video
-                              data-local-id={m.id}
                               src={m.url}
-                              onError={(e) => {
-                                const el = e.currentTarget;
-                                if (el.src !== m.previewUrl) el.src = m.previewUrl;
-                              }}
                               style={{
                                 maxHeight: 140,
                                 maxWidth: "100%",
@@ -2585,7 +2599,9 @@ function AdminPosts() {
                           </span>
                           <button
                             onClick={() => {
-                              navigator.clipboard?.writeText(tag).catch(() => {});
+                              navigator.clipboard
+                                ?.writeText(tag)
+                                .catch(() => {});
                               insertAtEnd(tag);
                             }}
                             className="ml-auto inline-flex items-center gap-1 rounded border border-[#4a5a45] px-2 py-0.5 hover:border-[var(--primary)]"
@@ -2643,9 +2659,7 @@ function AdminPosts() {
                     {p.date} • {p.published ? "Published" : "Draft"}
                   </div>
                 </div>
-                <div className="text-xs opacity-80 break-all">
-                  /blog/{p.slug}
-                </div>
+                <div className="text-xs opacity-80 break-all">/blog/{p.slug}</div>
                 <div className="mt-2 flex gap-2">
                   <button
                     onClick={() => navigate(`/blog/${p.slug}`)}
@@ -2679,7 +2693,7 @@ function AdminPosts() {
   );
 }
 
-/* ───────────── AdminPortfolio component — fixed previews ───────────── */
+/* ───────────── AdminPortfolio component ───────────── */
 function AdminPortfolio() {
   const [rows, setRows] = useState<PortfolioItem[]>(() => loadPortfolio());
   const [filter, setFilter] = useState<"all" | "image" | "video">("all");
@@ -2692,46 +2706,21 @@ function AdminPortfolio() {
     return () => window.removeEventListener("kabuto:data", onChange as any);
   }, []);
 
-  // When SW confirms a portfolio item is saved, swap previews to /local/*
- // In AdminPortfolio() – the effect that listens for SW "message"
-useEffect(() => {
-  const onMsg = (e: MessageEvent) => {
-    const { type, payload } = (e.data || {}) as any;
-    if (type === "cache-put-ok" && payload?.id && payload?.bucket === "portfolio") {
-      const url = localUrl("portfolio", payload.id);
-      const imgs = document.querySelectorAll<HTMLImageElement>(
-        `img[data-local-id="${payload.id}"]`,
-      );
-      imgs.forEach((img) => {
-        if (img.src !== url) img.src = url;
-      });
-      const vids = document.querySelectorAll<HTMLVideoElement>(
-        `video[data-local-id="${payload.id}"]`,
-      );
-      vids.forEach((v) => {
-        if (v.src !== url) v.src = url;
-      });
-    }
-  };
-
-  const sw = getActiveSW();
-  if (sw) navigator.serviceWorker!.addEventListener("message", onMsg);
-
-  // ✅ Cleanup must return a function, not a boolean
-  return () => {
-    if (sw) navigator.serviceWorker!.removeEventListener("message", onMsg);
-  };
-}, []);
-
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      const { type, payload } = (e.data || {}) as any;
+      if (type === "cache-put-ok" && payload?.id && payload?.bucket === "portfolio") {
+        // confirmation only — URL is deterministic already
+      }
+    };
+    navigator.serviceWorker?.addEventListener("message", onMsg);
+    return () => navigator.serviceWorker?.removeEventListener("message", onMsg);
+  }, []);
 
   async function addFiles(files: FileList | null) {
     if (!files || !files.length) return;
-
     for (const file of Array.from(files)) {
       const id = uid();
-      const url = localUrl("portfolio", id);
-      const temp = URL.createObjectURL(file); // instant preview
-
       window.dispatchEvent(
         new CustomEvent("kabuto:upload-begin", {
           detail: { id, filename: file.name, bucket: "portfolio" },
@@ -2746,34 +2735,25 @@ useEffect(() => {
         id,
         title: file.name,
         type,
-        url,
+        url: localUrl("portfolio", id), // set immediately
         filename: file.name,
         mime,
         createdAt: Date.now(),
         published: true,
-        previewUrl: temp,
       };
+      const next = [row, ...rows];
+      setRows(next);
+      savePortfolio(next);
 
-      setRows((r) => [row, ...r]);
-      savePortfolio([row, ...rows]);
-
-      try {
-        const reg = await navigator.serviceWorker.ready.catch(() => undefined);
-        const active = reg?.active ?? getActiveSW();
-        if (active) {
-          active.postMessage({
-            type: "cache-put",
-            payload: { id, blob: file, bucket: "portfolio" },
-          });
-        } else {
-          console.warn("Service worker not active; cannot store media yet.");
-        }
-      } catch {
-        console.warn("SW postMessage failed; preview will persist until SW ready.");
+      const reg = await navigator.serviceWorker.ready.catch(() => undefined);
+      if (reg?.active) {
+        reg.active.postMessage({
+          type: "cache-put",
+          payload: { id, blob: file, bucket: "portfolio" },
+        });
+      } else {
+        alert("Service worker not active; cannot store media.");
       }
-
-      // optional revoke later
-      setTimeout(() => URL.revokeObjectURL(temp), 60_000);
     }
   }
 
@@ -2788,9 +2768,7 @@ useEffect(() => {
     savePortfolio(next);
   }
 
-  const visible = rows.filter((r) =>
-    filter === "all" ? true : r.type === filter,
-  );
+  const visible = rows.filter((r) => (filter === "all" ? true : r.type === filter));
 
   return (
     <div className="grid gap-4">
@@ -2872,15 +2850,7 @@ useEffect(() => {
                 <div className="bg-[#222] grid place-items-center">
                   {r.type === "image" ? (
                     <img
-                      data-local-id={r.id}
                       src={r.url}
-                      onError={(e) => {
-                        if (r.previewUrl && e.currentTarget.src !== r.previewUrl) {
-                          e.currentTarget.src = r.previewUrl;
-                        } else {
-                          e.currentTarget.style.display = "none";
-                        }
-                      }}
                       alt=""
                       style={{
                         height: 180,
@@ -2891,15 +2861,7 @@ useEffect(() => {
                     />
                   ) : (
                     <video
-                      data-local-id={r.id}
                       src={r.url}
-                      onError={(e) => {
-                        if (r.previewUrl && e.currentTarget.src !== r.previewUrl) {
-                          (e.currentTarget as HTMLVideoElement).src = r.previewUrl!;
-                        } else {
-                          (e.currentTarget as HTMLVideoElement).style.display = "none";
-                        }
-                      }}
                       style={{
                         height: 180,
                         width: "auto",
@@ -2963,9 +2925,6 @@ export default function KabutoHub90s() {
   const [splashShowing, setSplashShowing] = useState<boolean>(false);
   const [splashImage, setSplashImage] = useState<string>("");
 
-  // DEV toggles (keep false for prod)
-  const DEV_DISABLE_SPLASH = false;
-
   useCursorTrail(!(transitioning || splashShowing));
 
   usePreloadImages([
@@ -3007,8 +2966,7 @@ export default function KabutoHub90s() {
           if (!a) return;
           a.muted = true;
           a.currentTime = 0;
-          a
-            .play()
+          a.play()
             .then(() => {
               a.pause();
               a.muted = false;
@@ -3021,16 +2979,13 @@ export default function KabutoHub90s() {
     } catch {}
   }, []);
 
-  // Navigation pre-handler (resilient)
   useEffect(() => {
     const onPre = async (e: any) => {
       const nextPath: string = e.detail?.nextPath || "/";
 
       try {
-        if (clickSfx.current) {
-          clickSfx.current.currentTime = 0;
-          clickSfx.current.play().catch(() => {});
-        }
+        clickSfx.current &&
+          ((clickSfx.current.currentTime = 0), clickSfx.current.play());
       } catch {}
 
       addHtmlLock();
@@ -3040,31 +2995,36 @@ export default function KabutoHub90s() {
       await new Promise(requestAnimationFrame);
 
       const needsSplash = isDesktopRoute(nextPath);
-      const splashImg = nextPath === "/" ? (ROOT_SPLASH || PF_SPLASH) : PF_SPLASH;
+      const splashImg =
+        nextPath === "/" ? (ROOT_SPLASH || PF_SPLASH) : PF_SPLASH;
 
-      // Switch route first so React view updates
       window.history.pushState({}, "", nextPath);
       window.dispatchEvent(new PopStateEvent("popstate"));
 
-      if (!DEV_DISABLE_SPLASH && needsSplash) {
+      if (needsSplash) {
         setSplashImage(splashImg);
         setSplashShowing(true);
         try {
-          if (transSfx.current) {
-            transSfx.current.currentTime = 0;
-            transSfx.current.play().catch(() => {});
-          }
+          transSfx.current &&
+            ((transSfx.current.currentTime = 0), transSfx.current.play());
         } catch {}
-        // splash owns the transition
-        setTimeout(() => setTransitioning(false), 200);
+
+        setTimeout(() => setTransitioning(false), 250);
       } else {
         const entered = new Promise<void>((resolve) => {
           const handler = () => {
-            window.removeEventListener("kabuto:page-entered", handler as any);
+            window.removeEventListener(
+              "kabuto:page-entered",
+              handler as any,
+            );
             resolve();
           };
-          window.addEventListener("kabuto:page-entered", handler as any, { once: true });
-          setTimeout(resolve, 1000);
+          window.addEventListener(
+            "kabuto:page-entered",
+            handler as any,
+            { once: true },
+          );
+          setTimeout(resolve, 1200);
         });
 
         await entered;
@@ -3077,47 +3037,30 @@ export default function KabutoHub90s() {
     return () => window.removeEventListener("kabuto:pre-navigate", onPre);
   }, []);
 
-  // First paint splash for desktop routes
   useEffect(() => {
     if (path === "/" || path === "/portfolio") {
       addHtmlLock();
       setTransitioning(true);
-      if (!DEV_DISABLE_SPLASH) {
-        setSplashImage(path === "/" ? (ROOT_SPLASH || PF_SPLASH) : PF_SPLASH);
-        setTimeout(() => {
-          setSplashShowing(true);
-          try {
-            if (transSfx.current) {
-              transSfx.current.currentTime = 0;
-              transSfx.current.play().catch(() => {});
-            }
-          } catch {}
-          setTimeout(() => setTransitioning(false), 250);
-        }, 200);
-      } else {
-        setTransitioning(false);
-        removeHtmlLock();
-      }
+      setSplashImage(path === "/" ? (ROOT_SPLASH || PF_SPLASH) : PF_SPLASH);
+
+      setTimeout(() => {
+        setSplashShowing(true);
+        try {
+          if (transSfx.current) {
+            transSfx.current.currentTime = 0;
+            transSfx.current.play();
+          }
+        } catch {}
+        setTimeout(() => setTransitioning(false), 250);
+      }, 200);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Splash lock toggling
   useEffect(() => {
     if (splashShowing) addHtmlLock();
     else removeHtmlLock();
     return () => removeHtmlLock();
-  }, [splashShowing]);
-
-  // Failsafe: never keep splash forever (handles asset 404s / silent errors)
-  useEffect(() => {
-    if (!splashShowing) return;
-    const id = setTimeout(() => {
-      setSplashShowing(false);
-      removeHtmlLock();
-      setTransitioning(false);
-    }, 4000);
-    return () => clearTimeout(id);
   }, [splashShowing]);
 
   useEffect(() => {
@@ -3136,6 +3079,17 @@ export default function KabutoHub90s() {
     }
     link.href = FAVICON_SRC;
   }, [path]);
+
+  const [navH, setNavH] = useState(48);
+  const navRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!navRef.current) return;
+    const r = () => setNavH(navRef.current!.offsetHeight || 48);
+    r();
+    const ro = new ResizeObserver(r);
+    ro.observe(navRef.current!);
+    return () => ro.disconnect();
+  }, []);
 
   const global = (
     <style>{`
@@ -3159,7 +3113,9 @@ export default function KabutoHub90s() {
   else if (path === "/lab") view = <LabHomePage />;
   else if (path === "/blog") view = <BlogPage />;
   else if (path.startsWith("/blog/"))
-    view = <BlogPostPage slug={decodeURIComponent(path.replace("/blog/", ""))} />;
+    view = (
+      <BlogPostPage slug={decodeURIComponent(path.replace("/blog/", ""))} />
+    );
   else if (path === "/esports") view = <EsportsPage />;
   else if (path === "/commissions") view = <CommissionsPage />;
   else if (path === "/portfolio") view = <PortfolioPage />;
@@ -3191,7 +3147,10 @@ export default function KabutoHub90s() {
       {global}
 
       {!(path === "/" || path === "/portfolio") && (
-        <div>
+        <div
+          ref={navRef}
+          className="sticky top-0 z-40 border-b border-[#4a5a45] bg-[#3a4538]/90 backdrop-blur"
+        >
           <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-3">
             {path !== homeTarget && (
               <button
@@ -3231,7 +3190,11 @@ export default function KabutoHub90s() {
                   url: "https://x.com/kabutoKunai",
                   icon: Twitter,
                 },
-                { name: "GitHub", url: "https://github.com/kabuto-mk7", icon: Github },
+                {
+                  name: "GitHub",
+                  url: "https://github.com/kabuto-mk7",
+                  icon: Github,
+                },
                 { name: "Contact", url: "mailto:contact@kabuto.studio", icon: Mail },
               ].map((s) => {
                 const internal = isInternalKabuto(s.url);
@@ -3301,23 +3264,18 @@ export default function KabutoHub90s() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.35 }}
+            transition={{ duration: 0.45 }}
             onAnimationComplete={() => {
-              // auto-clear shortly after showing
               window.setTimeout(() => {
                 setSplashShowing(false);
                 removeHtmlLock();
-              }, 1000);
+              }, 1400);
             }}
           >
             <img
               src={splashImage}
               alt="splash"
               className="max-w-[70vw] w-[680px] h-auto object-contain"
-              onError={() => {
-                setSplashShowing(false);
-                removeHtmlLock();
-              }}
             />
           </motion.div>
         )}
