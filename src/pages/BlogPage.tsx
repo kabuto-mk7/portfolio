@@ -62,7 +62,22 @@ export function BlogPostPage({ slug }: { slug: string }) {
         {!post ? (
           <div className="text-sm opacity-70">This post doesn't exist or is unpublished.</div>
         ) : (
-          <div className="prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: mdToHtml(post.content) }}/>
+          <>
+            <div className="prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: mdToHtml(post.content) }}/>
+            {post.attachments && post.attachments.length > 0 && (
+              <div className="mt-6 grid gap-4 md:grid-cols-2">
+                {post.attachments.map((att) => (
+                  <div key={att.id} className="rounded overflow-hidden">
+                    {att.type === "image" ? (
+                      <img src={att.src} alt="attachment" className="w-full h-auto object-contain" />
+                    ) : (
+                      <video src={att.src} className="w-full h-auto object-contain" muted autoPlay loop playsInline />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </Window>
     </main>

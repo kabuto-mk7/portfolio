@@ -11,6 +11,12 @@ export type EventRow = {
   published: boolean;
 };
 
+export type MediaItem = {
+  id: string;
+  src: string;
+  type: "image" | "video";
+};
+
 export type Post = {
   id: string;
   slug: string;
@@ -20,4 +26,6 @@ export type Post = {
   content: string;
   published: boolean;
   updatedAt: number;
+  /** Optional media attached to a post (images or videos). */
+  attachments?: MediaItem[];
 };

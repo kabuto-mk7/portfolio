@@ -3,14 +3,29 @@ import React from "react";
 import tape from "/assets/kabuto/ui/tape.png";
 import sticky from "/assets/kabuto/ui/sticky.png";
 import cracked from "/assets/kabuto/ui/cracked.jpg";
+import { loadPortfolioItems } from "@/lib/storage";
+import type { MediaItem } from "@/types";
+import { usePreloadImages } from "@/hooks/usePreloadImages";
+const selfPNG = "/assets/kabuto/portfolio/self.png";
 
 export function PortfolioPadContent() {
-  const items = PORTFOLIO_SAMPLES.map(x => x.type === "image" ? { type:"img" as const, src:x.src } : { type:"video" as const, src:x.src });
+  const [items, setItems] = React.useState<MediaItem[]>(() => loadPortfolioItems());
+  React.useEffect(() => {
+    const load = () => setItems(loadPortfolioItems());
+    load();
+    const onChange = (e: any) => { if (e.detail?.type === "portfolio") load(); };
+    window.addEventListener("kabuto:data", onChange);
+    return () => window.removeEventListener("kabuto:data", onChange);
+  }, []);
+  const display = items.length > 0
+    ? items.map((it) => ({ type: it.type === "image" ? "img" as const : "video" as const, src: it.src }))
+    : PORTFOLIO_SAMPLES.map(x => x.type === "image" ? { type:"img" as const, src:x.src } : { type:"video" as const, src:x.src });
+
   const [viewer, setViewer] = React.useState<number | null>(null);
   return (
     <div className="w-full h-full p-3">
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-3">
-        {items.map((it, i) => (
+        {display.map((it, i) => (
           <button key={i} onClick={() => setViewer(i)} className="aspect-video overflow-hidden rounded-md bg-black/30">
             {it.type === "img" ? (
               <img src={it.src} className="h-full w-full object-cover" loading="lazy" />
@@ -23,10 +38,10 @@ export function PortfolioPadContent() {
       {viewer !== null && (
         <div className="fixed inset-0 z-[9999] bg-black/85 grid place-items-center">
           <button className="absolute right-6 top-6 h-10 w-10 rounded bg-white/15 text-white text-xl" onClick={()=>setViewer(null)}>×</button>
-          {items[viewer].type === "img" ? (
-            <img src={items[viewer].src} className="max-w-[92vw] max-h-[86vh] object-contain" />
+          {display[viewer].type === "img" ? (
+            <img src={display[viewer].src} className="max-w-[92vw] max-h-[86vh] object-contain" />
           ) : (
-            <video src={items[viewer].src} className="max-w-[92vw] max-h-[86vh] object-contain" muted autoPlay loop playsInline />
+            <video src={display[viewer].src} className="max-w-[92vw] max-h-[86vh] object-contain" muted autoPlay loop playsInline />
           )}
         </div>
       )}
@@ -80,6 +95,7 @@ export function RatesPadContent() {
 }
 
 export function ContactPadContent() {
+  usePreloadImages([sticky, tape, cracked, selfPNG]);
   return (
     // The cracked background is applied to the entire contact pad container
     <div

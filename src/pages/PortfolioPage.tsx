@@ -5,16 +5,15 @@ import { usePreloadImages } from "@/hooks/usePreloadImages";
 import { useStageAnchor, useAlphaHover } from "@/hooks/portfolioStage";
 import { navigate } from "@/lib/router";
 import { PF_BG as BG, PF_OVERLAY as OV, PF_P1 as P1, PF_P2 as P2, PF_P3 as P3, PF_IPAD as IPAD, PF_VIEWMODEL, PORTFOLIO_SAMPLES } from "@/lib/assets";
-import React, { type JSX } from "react";
+import { loadPortfolioItems } from "@/lib/storage";
+import type { MediaItem } from "@/types";
+import React from "react";
 
 type PadMode = "portfolio" | "rates" | "contact" | null;
 
-export function PortfolioPage(): JSX.Element {
-  // SFX (quieter)
+export function PortfolioPage() {
   const fireRef = React.useRef<HTMLAudioElement | null>(null);
-  React.useEffect(() => {
-    const a = new Audio("/sfx/fire.mp3"); a.preload = "auto"; a.volume = 0.25; fireRef.current = a;
-  }, []);
+  React.useEffect(() => { const a = new Audio("/sfx/fire.mp3"); a.preload = "auto"; a.volume = 0.25; fireRef.current = a; }, []);
   const fire = React.useCallback(() => { try { if (fireRef.current) { fireRef.current.currentTime = 0; void fireRef.current.play(); } } catch {} }, []);
 
   usePreloadImages([BG, OV, P1, P2, P3, IPAD, PF_VIEWMODEL]);
@@ -51,13 +50,20 @@ export function PortfolioPage(): JSX.Element {
     window.addEventListener("mousemove", onMove, { passive:true });
     return () => window.removeEventListener("mousemove", onMove);
   }, []);
-  const gunTX = (mouse.x - 0.5) * 28;
-  const gunTY = (mouse.y - 0.5) * 14;
+  const gunTX = (mouse.x - 0.5) * 40;
+  const gunTY = (mouse.y - 0.5) * 20;
 
   const [pfWinOpen, setPfWinOpen] = React.useState(false);
+  const [pfItems, setPfItems] = React.useState<MediaItem[]>(() => loadPortfolioItems());
+  React.useEffect(() => {
+    const update = (e: any) => { if (e.detail?.type === "portfolio") setPfItems(loadPortfolioItems()); };
+    window.addEventListener("kabuto:data", update);
+    return () => window.removeEventListener("kabuto:data", update);
+  }, []);
+
   const persons = React.useMemo(()=>[
     { key:"rates"     as const, src:P1, onClick:()=>openPad("rates") },
-    { key:"portfolio" as const, src:P2, onClick:()=>setPfWinOpen(true) }, // middle opens Win95
+    { key:"portfolio" as const, src:P2, onClick:()=>{ fire(); setPfWinOpen(true); } },
     { key:"contact"   as const, src:P3, onClick:()=>openPad("contact") },
   ],[]);
   const hover = useAlphaHover(persons as any, m);
@@ -98,10 +104,12 @@ export function PortfolioPage(): JSX.Element {
 
       {pfWinOpen && (
         <PortfolioWin95Window
-          items={PORTFOLIO_SAMPLES.map(x => x.type==="image" ? ({type:"image" as const, src:x.src}) : ({type:"video" as const, src:x.src}))}
+          items={pfItems.length > 0 ? pfItems.map((it) => ({ type: it.type, src: it.src })) : PORTFOLIO_SAMPLES.map(x => x.type === "image" ? ({ type: "image" as const, src: x.src }) : ({ type: "video" as const, src: x.src }))}
           onClose={()=>setPfWinOpen(false)}
         />
       )}
+
+      <ClassicTaskbar onStart={() => navigate("/lab")} />
     </div>
   );
 }

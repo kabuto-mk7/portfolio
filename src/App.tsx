@@ -8,43 +8,49 @@ import { EsportsPage } from "@/pages/EsportsPage";
 import { CommissionsPage } from "@/pages/CommissionsPage";
 import { PortfolioPage } from "@/pages/PortfolioPage";
 import { AdminPage } from "@/pages/AdminPage";
-import { ClassicTaskbar } from "@/ui/Taskbar";
-
-
 import { usePath, isInternalKabuto, navigate } from "@/lib/router";
 import { usePreloadImages } from "@/hooks/usePreloadImages";
-import { BRAND, LOGO_SRC, FAVICON_SRC, CURSOR_URL, PF_VIEWMODEL, PF_START, PF_PCICON, PF_SPLASH, ROOT_SPLASH,
+import {
+  BRAND, LOGO_SRC, FAVICON_SRC, CURSOR_URL, PF_VIEWMODEL, PF_START, PF_PCICON, PF_SPLASH, ROOT_SPLASH,
   FEATURE_IMAGE_PRIMARY, SMOKER_SRC, ROOT_WALL, ICON_PORTFOLIO, ICON_LAB, ICON_IRL, ICON_CONTACT,
-  RIGHT_STACK_IMAGES, RATES_THUMBS, SFX_CLICK, SFX_TRANSITION, SFX_FIRE } from "@/lib/assets";
+  RIGHT_STACK_IMAGES, RATES_THUMBS, SFX_CLICK, SFX_TRANSITION, SFX_FIRE, PORTFOLIO_SAMPLES
+} from "@/lib/assets";
+import { IMAGES } from "@/assets.manifest";
 import React, { type JSX } from "react";
+import { ClassicTaskbar } from "./ui/Taskbar";
+
 
 export default function KabutoHub90s() {
   const [path] = usePath();
 
-  // Splash lock helpers
   const addHtmlLock = () => document.documentElement.classList.add("splash-lock");
   const removeHtmlLock = () => document.documentElement.classList.remove("splash-lock");
-  const isDesktopRoute = (p:string) => p === "/" || p === "/portfolio";
 
-  // transitions & sfx
   const [transitioning, setTransitioning] = React.useState(false);
   const navRef = React.useRef<HTMLDivElement | null>(null);
   const clickSfx = React.useRef<HTMLAudioElement | null>(null);
   const transSfx = React.useRef<HTMLAudioElement | null>(null);
   const fireSfx  = React.useRef<HTMLAudioElement | null>(null);
 
-  const [hardBlack] = React.useState<boolean>(path === "/" || path === "/portfolio");
   const [splashShowing, setSplashShowing] = React.useState<boolean>(false);
   const [splashImage, setSplashImage] = React.useState<string>("");
+
+  const sticky = "/assets/kabuto/ui/sticky.png";
+  const tape   = "/assets/kabuto/ui/tape.png";
+  const crackedBG = "/assets/kabuto/ui/cracked.jpg";
+  const selfPNG = "/assets/kabuto/portfolio/self.png";
 
   // cursor trail
   useCursorTrail(!(transitioning || splashShowing));
 
-  // preload global assets
+  // *** Preload EVERYTHING so there’s no pop-in anywhere ***
   usePreloadImages([
     LOGO_SRC, FAVICON_SRC, FEATURE_IMAGE_PRIMARY, SMOKER_SRC, ROOT_WALL,
     ICON_PORTFOLIO, ICON_LAB, ICON_IRL, ICON_CONTACT, PF_VIEWMODEL, PF_START, PF_PCICON,
-    PF_SPLASH, ROOT_SPLASH, ...RIGHT_STACK_IMAGES, ...RATES_THUMBS,
+    PF_SPLASH, ROOT_SPLASH, sticky, tape, crackedBG, selfPNG,
+    ...RIGHT_STACK_IMAGES, ...RATES_THUMBS,
+    ...IMAGES,
+    ...PORTFOLIO_SAMPLES.filter(x => x.type === "image").map(x => x.src),
   ]);
 
   // sfx init/unlock
@@ -53,9 +59,7 @@ export default function KabutoHub90s() {
       clickSfx.current = new Audio(SFX_CLICK);
       transSfx.current = new Audio(SFX_TRANSITION);
       fireSfx.current  = new Audio(SFX_FIRE);
-      [clickSfx.current, transSfx.current, fireSfx.current].forEach(a=>{
-        if (!a) return; a.preload="auto"; a.volume=0.65;
-      });
+      [clickSfx.current, transSfx.current, fireSfx.current].forEach(a => { if (!a) return; a.preload="auto"; a.volume=0.65; });
       const unlock = () => {
         [clickSfx.current, transSfx.current, fireSfx.current].forEach(a=>{
           if (!a) return; a.muted = true; a.currentTime = 0;
@@ -67,34 +71,26 @@ export default function KabutoHub90s() {
     } catch {}
   }, []);
 
-  // pre-navigate interception
+  // pre-navigate transition
   React.useEffect(() => {
     const onPre = (e:any) => {
       const nextPath: string = e.detail?.nextPath || "/";
-      try { clickSfx.current && ((clickSfx.current.currentTime = 0), clickSfx.current.play()); } catch {}
+      try { clickSfx.current && ((clickSfx.current.currentTime=0), clickSfx.current.play()); } catch {}
       addHtmlLock(); setTransitioning(true);
-
       window.setTimeout(() => {
-        const needsSplash = isDesktopRoute(nextPath);
-        const splashImg = nextPath === "/" ? (ROOT_SPLASH || PF_SPLASH) : PF_SPLASH;
-
         window.history.pushState({}, "", nextPath);
         window.dispatchEvent(new PopStateEvent("popstate"));
-
-        if (needsSplash) {
-          setSplashImage(splashImg); setSplashShowing(true);
-          try { transSfx.current && ((transSfx.current.currentTime = 0), transSfx.current.play()); } catch {}
-          window.setTimeout(()=> setTransitioning(false), 250);
-        } else {
-          window.setTimeout(() => { setTransitioning(false); removeHtmlLock(); }, 350);
-        }
+        setSplashImage(nextPath === "/" ? (ROOT_SPLASH || PF_SPLASH) : PF_SPLASH);
+        setSplashShowing(true);
+        try { transSfx.current && ((transSfx.current.currentTime=0), transSfx.current.play()); } catch {}
+        window.setTimeout(()=> setTransitioning(false), 500);
       }, 120);
     };
     window.addEventListener("kabuto:pre-navigate", onPre);
     return () => window.removeEventListener("kabuto:pre-navigate", onPre);
   }, []);
 
-  // initial splash if landing on desktop routes
+  // first-load splash on desktop routes
   React.useEffect(() => {
     if (path === "/" || path === "/portfolio") {
       setTransitioning(true);
@@ -102,11 +98,12 @@ export default function KabutoHub90s() {
       setTimeout(() => {
         setSplashShowing(true);
         try { if (transSfx.current) { transSfx.current.currentTime = 0; transSfx.current.play(); } } catch {}
-        setTimeout(()=> setTransitioning(false), 250);
+        setTimeout(()=> setTransitioning(false), 500);
       }, 200);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
   React.useEffect(() => {
     const el = document.documentElement;
     if (splashShowing) el.classList.add("splash-lock"); else el.classList.remove("splash-lock");
@@ -119,32 +116,20 @@ export default function KabutoHub90s() {
       path === "/" ? "kabuto" :
       path === "/lab" ? "kabuto — lab" :
       `kabuto — ${path.replace("/", "")}`;
-
     let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
     if (!link) { link = document.createElement("link"); link.rel = "icon"; document.head.appendChild(link); }
     link.href = FAVICON_SRC;
   }, [path]);
 
-  // nav height (reserved)
+  // sticky top bar height (non-desktop pages)
   const [navH, setNavH] = React.useState(48);
-  React.useEffect(() => {
-    if (!navRef.current) return;
-    const r = () => setNavH(navRef.current!.offsetHeight || 48);
-    r(); const ro = new ResizeObserver(r);
-    ro.observe(navRef.current!);
-    return () => ro.disconnect();
-  }, []);
-
-  // global CSS
+  const navRefCb = React.useCallback((el: HTMLDivElement | null) => { navRef.current = el; if (!el) return; const r = () => setNavH(el.offsetHeight || 48); r(); new ResizeObserver(r).observe(el); }, []);
   const global = (
     <style>{`
       :root { --primary:${BRAND.primary}; --primarySoft:${BRAND.primarySoft}; --bg:${BRAND.bg}; --panel:${BRAND.panel}; --accent:${BRAND.accent}; --cs-cursor: url("${CURSOR_URL}") 16 16, crosshair; }
       html, body { margin: 0; background: var(--bg); color: var(--primarySoft); }
       html.splash-lock, html.splash-lock body { background:#000 !important; }
-      a { color: var(--primarySoft); text-decoration: none; }
-      a:hover { color: var(--accent); text-decoration: underline; }
-      a:visited { color: var(--primarySoft); }
-      a:focus { outline: none; }
+      a { color: var(--primarySoft); text-decoration: none; } a:hover { color: var(--accent); text-decoration: underline; } a:visited { color: var(--primarySoft); }
       html, body, a, button, [role="button"], input, textarea, select, label, * { cursor: var(--cs-cursor) !important; }
     `}</style>
   );
@@ -167,9 +152,12 @@ export default function KabutoHub90s() {
     <div className={"min-h-screen text-[var(--primarySoft)] bg-[var(--bg)] subpixel-antialiased" + (path === "/" || path === "/portfolio" ? " overflow-hidden" : "")}>
       {global}
 
-      {/* top bar – hidden on desktops */}
+      {/* top bar – hidden on desktop-like routes */}
       {!(path === "/" || path === "/portfolio") && (
-        <div ref={navRef} className="fixed top-0 left-0 right-0 z-40 border-b border-[#4a5a45] bg-[#3a4538]/90 backdrop-blur">
+        <div
+            ref={navRefCb}
+            className="fixed left-0 right-0 top-0 z-40 border-b border-[#4a5a45] bg-[#3a4538]/90 backdrop-blur"
+          >
           <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-3">
             {path !== homeTarget && (
               <button onClick={()=>navigate(homeTarget)} className="rounded-[4px] border border-[#4a5a45] bg-[#3a4538] px-2 py-1 text-xs hover:border-[var(--primary)] hover:bg-[#404b3f] transition-colors">Home</button>
@@ -198,7 +186,6 @@ export default function KabutoHub90s() {
               })}
             </div>
           </div>
-          
         </div>
       )}
 
@@ -215,12 +202,8 @@ export default function KabutoHub90s() {
         )}
       </div>
 
-      {/* black overlay */}
-      <AnimatePresence>
-        {transitioning && (
-          <motion.div className="fixed inset-0 z-[180] bg-black" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} transition={{ duration:0.5 }}/>
-        )}
-      </AnimatePresence>
+      {/* black overlay during route change */}
+      <AnimatePresence>{transitioning && (<motion.div className="fixed inset-0 z-[180] bg-black" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} transition={{ duration:0.5 }}/>)}</AnimatePresence>
 
       {/* splash layer */}
       <AnimatePresence>
@@ -232,10 +215,9 @@ export default function KabutoHub90s() {
           </motion.div>
         )}
       </AnimatePresence>
-
-      {!(transitioning || splashShowing) && (
-      <ClassicTaskbar onStart={() => navigate("/")} />
-      )}
+            <div style={{ zIndex: 100 }}>
+        <ClassicTaskbar onStart={() => window.dispatchEvent(new CustomEvent("kabuto:pre-navigate", { detail:{ nextPath: "/" } }))} />
+      </div>
 
       {/* cursor trail */}
       {Array.from({ length: 10 }).map((_, i) => (
@@ -244,11 +226,10 @@ export default function KabutoHub90s() {
                    filter:"drop-shadow(0 0 6px rgba(0,0,0,0.8)) drop-shadow(0 0 6px rgba(0,255,0,0.35))", zIndex:2147483647, opacity:0, transform:"translate(-50%, -50%)" }}/>
       ))}
     </div>
-
   );
 }
 
-/* ————— utilities from your file ————— */
+/* ——— cursor trail util ——— */
 function useCursorTrail(enabled: boolean) {
   React.useEffect(() => {
     if (!enabled) {

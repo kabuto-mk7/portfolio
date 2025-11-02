@@ -1,13 +1,13 @@
 import { Panel, Window } from "@/ui/Window";
-import type { EventRow, Post } from "@/types";
-import { ADMIN_HASH_KEY, loadEvents, saveEvents, loadPosts, savePosts, uid, setAdminPassword, verifyAdminPassword } from "@/lib/storage";
-import { Plus, Save, Trash2, PencilLine, Lock, Unlock } from "lucide-react";
+import type { EventRow, Post, MediaItem } from "@/types";
+import { ADMIN_HASH_KEY, loadEvents, saveEvents, loadPosts, savePosts, loadPortfolioItems, savePortfolioItems, uid, setAdminPassword, verifyAdminPassword } from "@/lib/storage";
+import { Plus, Save, Trash2, PencilLine, Lock, Unlock, X } from "lucide-react";
 import React from "react";
 
 export function AdminPage() {
   const [authed, setAuthed] = React.useState<boolean>(false);
   const [hasPass, setHasPass] = React.useState<boolean>(!!localStorage.getItem(ADMIN_HASH_KEY));
-  const [mode, setMode] = React.useState<"events"|"posts">("events");
+  const [mode, setMode] = React.useState<"events"|"posts"|"portfolio">("events");
 
   async function handleSetPassword(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -55,13 +55,15 @@ export function AdminPage() {
         <div className="flex gap-2 mb-4">
           <button onClick={()=>setMode("events")} className={`rounded px-3 py-1 text-sm border ${mode==="events"?"border-[var(--primary)] bg-[#404b3f]":"border-[#4a5a45] bg-[#3a4538]"}`}>Events</button>
           <button onClick={()=>setMode("posts")}  className={`rounded px-3 py-1 text-sm border ${mode==="posts" ?"border-[var(--primary)] bg-[#404b3f]":"border-[#4a5a45] bg-[#3a4538]"}`}>Posts</button>
+          <button onClick={()=>setMode("portfolio")}  className={`rounded px-3 py-1 text-sm border ${mode==="portfolio" ?"border-[var(--primary)] bg-[#404b3f]":"border-[#4a5a45] bg-[#3a4538]"}`}>Portfolio</button>
         </div>
-        {mode==="events" ? <AdminEvents/> : <AdminPosts/>}
+        {mode==="events" ? <AdminEvents/> : mode === "posts" ? <AdminPosts/> : <AdminPortfolio/>}
       </Window>
     </main>
   );
 }
 
+/* ------------------ Events ------------------ */
 function AdminEvents() {
   const [rows, setRows] = React.useState<EventRow[]>(() => loadEvents());
   const [draft, setDraft] = React.useState<EventRow>({ id:"", game:"", date:"", location:"", event:"", placement:"", published:true });
@@ -143,10 +145,12 @@ function AdminEvents() {
   );
 }
 
+/* ------------------ Posts (+attachments) ------------------ */
 function AdminPosts() {
   const [rows, setRows] = React.useState<Post[]>(() => loadPosts());
-  const empty: Post = { id:"", slug:"", title:"", date:"", summary:"", content:"", published:false, updatedAt:Date.now() };
+  const empty: Post = { id:"", slug:"", title:"", date:"", summary:"", content:"", published:false, updatedAt:Date.now(), attachments: [] };
   const [draft, setDraft] = React.useState<Post>(empty);
+  const [attUploads, setAttUploads] = React.useState<{ file: File; progress: number; dataUrl?: string; type?: "image"|"video"; }[]>([]);
 
   function genSlug(title:string) {
     const base = title.toLowerCase().replace(/[^a-z0-9\s-]/g,"").trim().replace(/\s+/g,"-").slice(0,64) || "post";
@@ -160,12 +164,39 @@ function AdminPosts() {
     const date = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
     const slug = draft.slug || genSlug(draft.title);
     const next: Post = { ...draft, id: uid(), slug, updatedAt: Date.now(), date };
-    setRows([next, ...rows]); savePosts([next, ...rows]); setDraft(empty);
+    setRows([next, ...rows]); savePosts([next, ...rows]); setDraft(empty); setAttUploads([]);
   }
   function delPost(id:string) { const next = rows.filter(r=>r.id!==id); setRows(next); savePosts(next); }
   function updPost(id:string, patch: Partial<Post>) {
     const next = rows.map(r => r.id===id ? { ...r, ...patch, updatedAt: Date.now() } : r);
     setRows(next); savePosts(next);
+  }
+
+  function addAttachments(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    files.forEach((file) => {
+      setAttUploads((prev) => [...prev, { file, progress: 0 }]);
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string;
+        const fileType = file.type.startsWith("video/") ? "video" : "image";
+        setAttUploads((prev) => prev.map((u) => u.file === file ? { ...u, dataUrl, progress: 100, type: fileType } : u));
+        const newItem: MediaItem = { id: uid(), src: dataUrl, type: fileType };
+        setDraft((d) => ({ ...d, attachments: [newItem, ...(d.attachments ?? [])] }));
+      };
+      reader.onprogress = (ev) => {
+        if (ev.lengthComputable) {
+          const percent = Math.round((ev.loaded / ev.total) * 100);
+          setAttUploads((prev) => prev.map((u) => u.file === file ? { ...u, progress: percent } : u));
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = "";
+  }
+
+  function removeAttachment(id: string) {
+    setDraft((d) => ({ ...d, attachments: (d.attachments ?? []).filter((a) => a.id !== id) }));
   }
 
   return (
@@ -179,6 +210,33 @@ function AdminPosts() {
           <label className="inline-flex items-center gap-2 text-xs">
             <input type="checkbox" checked={draft.published} onChange={e=>setDraft({...draft, published:e.target.checked})}/> Published
           </label>
+
+          <div className="grid gap-2">
+            <label className="text-xs">Attachments (images/videos)</label>
+            <input type="file" multiple accept="image/*,video/*" onChange={addAttachments} className="block w-full text-sm" />
+            {attUploads.map((u, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="text-xs truncate max-w-[100px]">{u.file.name}</span>
+                <div className="flex-1 h-2 bg-[#2a3328] rounded"><div className="h-full bg-[var(--accent)] rounded" style={{ width: `${u.progress}%` }} /></div>
+                {u.progress === 100 && <span className="text-xs">✓</span>}
+              </div>
+            ))}
+            {(draft.attachments ?? []).length > 0 && (
+              <div className="grid gap-2 sm:grid-cols-3">
+                {(draft.attachments ?? []).map((att) => (
+                  <div key={att.id} className="relative">
+                    {att.type === "image" ? (
+                      <img src={att.src} alt="att" className="w-full h-auto object-contain rounded" />
+                    ) : (
+                      <video src={att.src} className="w-full h-auto object-contain rounded" muted autoPlay loop playsInline />
+                    )}
+                    <button onClick={() => removeAttachment(att.id)} className="absolute top-1 right-1 h-4 w-4 rounded-full bg-black/60 text-white flex items-center justify-center text-xs">×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <button onClick={addPost} className="inline-flex items-center gap-2 rounded border border-[#4a5a45] bg-[#3a4538] px-3 py-1 text-sm hover:border-[var(--primary)]">
             <Save className="h-4 w-4"/> Save post
           </button>
@@ -209,6 +267,78 @@ function AdminPosts() {
                     <input type="checkbox" checked={p.published} onChange={e=>updPost(p.id,{published:e.target.checked})}/> Published
                   </label>
                 </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+    </div>
+  );
+}
+
+/* ------------------ Portfolio (uploads) ------------------ */
+function AdminPortfolio() {
+  const [items, setItems] = React.useState<MediaItem[]>(() => loadPortfolioItems());
+  const [uploads, setUploads] = React.useState<{ file: File; progress: number; dataUrl?: string; type?: "image"|"video"; }[]>([]);
+
+  function addFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    files.forEach((file) => {
+      setUploads((prev) => [...prev, { file, progress: 0 }]);
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string;
+        const fileType = file.type.startsWith("video/") ? "video" : "image";
+        setUploads((prev) => prev.map((u) => u.file === file ? { ...u, progress: 100, dataUrl, type: fileType } : u));
+        const newItem: MediaItem = { id: uid(), src: dataUrl, type: fileType };
+        setItems((prev) => { const updated = [newItem, ...prev]; savePortfolioItems(updated); return updated; });
+      };
+      reader.onprogress = (ev) => {
+        if (ev.lengthComputable) {
+          const percent = Math.round((ev.loaded / ev.total) * 100);
+          setUploads((prev) => prev.map((u) => u.file === file ? { ...u, progress: percent } : u));
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = "";
+  }
+
+  function removeItem(id: string) {
+    const next = items.filter((it) => it.id !== id);
+    setItems(next); savePortfolioItems(next);
+  }
+
+  return (
+    <div className="grid gap-4">
+      <Panel title="Add portfolio item" rightTag="upload">
+        <div className="grid gap-2 text-xs">
+          <input type="file" multiple accept="image/*,video/*" onChange={addFiles} className="block w-full text-sm" />
+          {uploads.map((u, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <span className="text-xs truncate max-w-[100px]">{u.file.name}</span>
+              <div className="flex-1 h-2 bg-[#2a3328] rounded"><div className="h-full bg-[var(--accent)] rounded" style={{ width: `${u.progress}%` }} /></div>
+              {u.progress === 100 && <span className="text-xs">✓</span>}
+            </div>
+          ))}
+        </div>
+      </Panel>
+
+      <Panel title="Portfolio items" rightTag={`${items.length}`}>
+        {items.length === 0 ? (
+          <div className="text-sm opacity-70">No portfolio items uploaded.</div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-4 sm:grid-cols-2">
+            {items.map((it) => (
+              <div key={it.id} className="relative rounded border border-[#4a5a45] p-2">
+                {it.type === "image" ? (
+                  <img src={it.src} alt="item" className="w-full h-auto object-contain rounded" />
+                ) : (
+                  <video src={it.src} className="w-full h-auto object-contain rounded" muted autoPlay loop playsInline />
+                )}
+                <button onClick={() => removeItem(it.id)} className="absolute top-1 right-1 h-5 w-5 rounded-full bg-black/60 text-white flex items-center justify-center text-xs hover:bg-black/80" title="Delete">
+                  <X className="h-3 w-3" />
+                </button>
               </div>
             ))}
           </div>
