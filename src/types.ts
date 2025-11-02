@@ -1,4 +1,5 @@
 export type SocialItem = { name: string; url: string; icon: React.ComponentType<any> };
+
 export type SectionItem = { label: string; url: string };
 
 export type EventRow = {
@@ -11,6 +12,12 @@ export type EventRow = {
   published: boolean;
 };
 
+export type MediaItem = {
+  id: string;
+  type: "image" | "video";
+  src: string;
+};
+
 export type Post = {
   id: string;
   slug: string;
@@ -20,4 +27,5 @@ export type Post = {
   content: string;
   published: boolean;
   updatedAt: number;
+  attachments?: MediaItem[];
 };
