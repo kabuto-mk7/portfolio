@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; }
+:root{
+  --primary:#d7e6b6; --primarySoft:#e6f2cf; --bg:#2c3528;
+  --panel:#3a4538; --accent:#d7c65a;
+}
+html, body { margin:0; background:var(--bg); color:var(--primarySoft); }
+a { color:var(--primarySoft); text-decoration:none; }
+a:hover { color:var(--accent); text-decoration:underline; }
+a:visited { color:var(--primarySoft); }
+
+.app-container{ max-width:1200px; margin-left:auto; margin-right:auto; width:100%; }
