@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-misused-promises */
 import React, {
   type CSSProperties,
-  type ComponentType,
   useEffect,
   useMemo,
   useRef,
@@ -26,19 +25,63 @@ import {
 } from "lucide-react";
 import { createPortal } from "react-dom";
 
+const APP_BUILD = "2025-11-02.4"; // bump on each deploy
+
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+    navigator.serviceWorker
+      .register(`/sw.js?v=${APP_BUILD}`)
+      .then((reg) => reg.update().catch(() => {}))
+      .catch(() => {});
   });
 }
 
-import { IMAGES, VIDEOS, AUDIOS } from "./assets.manifest";
-import { injectPreloadLinks, warmDecode } from "./utils/preload";
+// --- HOTFIX: remove hard deps on optional preload/manifest modules ---
+type PreloadAs = "image" | "video" | "audio";
+const IMAGES: string[] = []; // you can fill these later
+const VIDEOS: string[] = [];
+const AUDIOS: string[] = [];
+
+/** Inject <link rel="preload"> tags (no-op safe) */
+function injectPreloadLinks(list: string[], as: PreloadAs) {
+  try {
+    list.forEach((href) => {
+      const l = document.createElement("link");
+      l.rel = "preload";
+      l.as = as;
+      l.href = href;
+      document.head.appendChild(l);
+    });
+  } catch {}
+}
+
+/** Best-effort warm decode (safe no-op) */
+async function warmDecode(opts: { images?: string[]; videos?: string[]; audios?: string[] }) {
+  try {
+    (opts.images || []).forEach((src) => {
+      const img = new Image();
+      (img as any).decoding = "async";
+      img.src = src;
+    });
+    // videos/audios intentionally skipped to stay no-op and fast
+  } catch {}
+}
+
+/** Safe accessor for a ready service worker (won't throw) */
+function getActiveSW(): ServiceWorker | null {
+  try {
+    // controller exists after first SW claim; ready().active also works after install
+    // We try controller first for instant availability
+    if (navigator.serviceWorker?.controller) return navigator.serviceWorker.controller as any;
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 /* ╭──────────────────────────────────────────────────────────────────────────╮
    │ Types                                                                    │
    ╰──────────────────────────────────────────────────────────────────────────╯ */
-type SocialItem = { name: string; url: string; icon: ComponentType<any> };
 type SectionItem = { label: string; url: string };
 
 type EventRow = {
@@ -67,11 +110,14 @@ type PortfolioItem = {
   id: string;
   title?: string;
   type: "image" | "video";
-  url: string;            // stable /local/portfolio/{id}
+  url: string; // stable /local/portfolio/{id}
   filename?: string;
   mime?: string;
   createdAt: number;
   published: boolean;
+
+  /** local-only preview URL (blob:...) to avoid grey tile before SW saves */
+  previewUrl?: string | null;
 };
 
 /* ╭──────────────────────────────────────────────────────────────────────────╮
@@ -267,13 +313,13 @@ function mdToHtml(md: string) {
   // links [text](url)
   html = html.replace(
     /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noreferrer">$1</a>'
+    '<a href="$2" target="_blank" rel="noreferrer">$1</a>',
   );
 
   // images ![alt](src) — allow any src (including /local/... from SW)
   html = html.replace(
     /!\[([^\]]*)\]\(([^)]+)\)/g,
-    '<img src="$2" alt="$1" style="max-width:100%;height:auto;display:block;margin:12px 0;" />'
+    '<img src="$2" alt="$1" style="max-width:100%;height:auto;display:block;margin:12px 0;" />',
   );
 
   // paragraphs & line breaks
@@ -322,7 +368,16 @@ const SECTIONS_LOWER: SectionItem[] = [
 function LabHomePage() {
   const [cacheBust, setCacheBust] = useState("");
   useEffect(() => setCacheBust(String(Date.now())), []);
-  usePreloadImages([FEATURE_IMAGE_PRIMARY, SMOKER_SRC, PF_BG, PF_OVERLAY, PF_IPAD, PF_P1, PF_P2, PF_P3]);
+  usePreloadImages([
+    FEATURE_IMAGE_PRIMARY,
+    SMOKER_SRC,
+    PF_BG,
+    PF_OVERLAY,
+    PF_IPAD,
+    PF_P1,
+    PF_P2,
+    PF_P3,
+  ]);
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
@@ -333,6 +388,9 @@ function LabHomePage() {
           className="w-full rounded-[6px] border border-[#4a5a45] shadow-[0_0_0_1px_#2d362b] object-cover"
           loading="eager"
           decoding="async"
+          onError={(e) => {
+            e.currentTarget.style.display = "none";
+          }}
         />
       </div>
 
@@ -357,7 +415,9 @@ function LabHomePage() {
                   This is the lab. Build logs, e-sports kit + results, and
                   projects that don’t fit anywhere else.
                 </p>
-                <p className="text-sm opacity-80 leading-relaxed">Never give up.</p>
+                <p className="text-sm opacity-80 leading-relaxed">
+                  Never give up.
+                </p>
               </motion.div>
             </Panel>
 
@@ -422,7 +482,9 @@ function LabHomePage() {
                     >
                       <span className="flex items-center justify-center gap-2 text-[var(--accent)] tracking-wide">
                         <span className="h-2 w-2 rounded-sm bg-[var(--primary)] shadow-[0_0_8px_var(--primary)]" />
-                        <span className="uppercase text-[13px]">{s.label}</span>
+                        <span className="uppercase text-[13px]">
+                          {s.label}
+                        </span>
                       </span>
                     </a>
                   );
@@ -453,6 +515,7 @@ function LabHomePage() {
                 className="w-full h-auto object-cover"
                 loading="lazy"
                 decoding="async"
+                onError={(e) => (e.currentTarget.style.display = "none")}
               />
             </div>
           </div>
@@ -489,11 +552,7 @@ function isInternalKabuto(url: string) {
   }
 }
 
-/** Centralized navigate:
- *  - Internal routes: emit a pre-navigate event so the root can run
- *    the black → splash → page sequence *before* pushState.
- *  - External routes: open in new tab, but still ping a UI click so SFX plays.
- */
+/** Centralized navigate */
 function navigate(url: string) {
   try {
     const u = new URL(url, window.location.origin);
@@ -508,7 +567,7 @@ function navigate(url: string) {
     if (internal) {
       const nextPath = u.pathname || "/";
       window.dispatchEvent(
-        new CustomEvent("kabuto:pre-navigate", { detail: { nextPath } })
+        new CustomEvent("kabuto:pre-navigate", { detail: { nextPath } }),
       );
     } else {
       window.open(u.toString(), "_blank", "noopener,noreferrer");
@@ -521,11 +580,7 @@ function navigate(url: string) {
 /* ╭──────────────────────────────────────────────────────────────────────────╮
    │ Root Desktop (/)                                                         │
    ╰──────────────────────────────────────────────────────────────────────────╯ */
-type DesktopIcon = {
-  label: string;
-  icon: string;
-  onOpen: () => void;
-};
+
 const ICON_VISITOR_LABEL = "/assets/kabuto/portfolio/photo.png";
 
 function NotepadWindow({ onClose }: { onClose: () => void }): JSX.Element {
@@ -552,7 +607,7 @@ function NotepadWindow({ onClose }: { onClose: () => void }): JSX.Element {
   React.useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!dragging.current) return;
-      setPos((p) => ({
+      setPos(() => ({
         x: Math.max(0, e.clientX - dragging.current!.ox),
         y: Math.max(0, e.clientY - dragging.current!.oy),
       }));
@@ -572,7 +627,12 @@ function NotepadWindow({ onClose }: { onClose: () => void }): JSX.Element {
   };
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black/30" onMouseDown={() => { /* swallow bg */ }}>
+    <div
+      className="fixed inset-0 z-[200] bg-black/30"
+      onMouseDown={() => {
+        /* swallow bg */
+      }}
+    >
       <div
         className="bg-[#c0c0c0] fixed"
         style={{ ...bevelDown, width: 520, left: pos.x, top: pos.y }}
@@ -611,6 +671,7 @@ function NotepadWindow({ onClose }: { onClose: () => void }): JSX.Element {
             src={NOTEPAD_CHROME}
             alt=""
             className="absolute inset-0 w-full h-full object-cover opacity-[0.10] pointer-events-none select-none"
+            onError={(e) => (e.currentTarget.style.display = "none")}
           />
           <div className="relative p-3 text-[13px] leading-6 text-black">
             <div>
@@ -672,8 +733,10 @@ function PortfolioWin95Window({
     if (viewer === null) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setViewer(null);
-      if (e.key === "ArrowLeft") setViewer((v) => (v! + items.length - 1) % items.length);
-      if (e.key === "ArrowRight") setViewer((v) => (v! + 1) % items.length);
+      if (e.key === "ArrowLeft")
+        setViewer((v) => ((v ?? 0) + items.length - 1) % items.length);
+      if (e.key === "ArrowRight")
+        setViewer((v) => ((v ?? 0) + 1) % items.length);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -688,7 +751,12 @@ function PortfolioWin95Window({
       >
         <div
           className="flex items-center justify-between px-2 select-none"
-          style={{ background: "#000080", borderBottom: "1px solid #000040", color: "#fff", height: 28 }}
+          style={{
+            background: "#000080",
+            borderBottom: "1px solid #000040",
+            color: "#fff",
+            height: 28,
+          }}
         >
           <div className="text-[12px]">My Work</div>
           <button
@@ -704,7 +772,12 @@ function PortfolioWin95Window({
 
         <div
           className="px-2 py-1 text-[12px] flex items-center gap-3"
-          style={{ background: "#dfdfdf", borderBottom: "1px solid #a0a0a0", color: "#000", height: 26 }}
+          style={{
+            background: "#dfdfdf",
+            borderBottom: "1px solid #a0a0a0",
+            color: "#000",
+            height: 26,
+          }}
         >
           <span>File</span>
           <span>Edit</span>
@@ -739,6 +812,7 @@ function PortfolioWin95Window({
                         objectFit: "contain",
                         verticalAlign: "top",
                       }}
+                      onError={(e) => (e.currentTarget.style.display = "none")}
                     />
                   ) : (
                     <video
@@ -754,6 +828,7 @@ function PortfolioWin95Window({
                         objectFit: "contain",
                         verticalAlign: "top",
                       }}
+                      onError={(e) => (e.currentTarget.style.display = "none")}
                     />
                   )}
                 </button>
@@ -764,7 +839,12 @@ function PortfolioWin95Window({
 
         <div
           className="px-2 text-[12px] flex items-center justify-between"
-          style={{ background: "#dfdfdf", borderTop: "1px solid #a0a0a0", color: "#404040", height: 24 }}
+          style={{
+            background: "#dfdfdf",
+            borderTop: "1px solid #a0a0a0",
+            color: "#404040",
+            height: 24,
+          }}
         >
           <span>Ready</span>
           <span>Items: {items.length}</span>
@@ -775,14 +855,16 @@ function PortfolioWin95Window({
         <div className="fixed inset-0 z-[220] bg-black/90 grid place-items-center">
           <button
             className="absolute left-4 md:left-8 top-1/2 -translate-y-1/2 h-12 w-12 rounded bg-white/10 text-white text-2xl"
-            onClick={() => setViewer((v) => (v! + items.length - 1) % items.length)}
+            onClick={() =>
+              setViewer((v) => ((v ?? 0) + items.length - 1) % items.length)
+            }
             title="Previous"
           >
             ‹
           </button>
           <button
             className="absolute right-4 md:right-8 top-1/2 -translate-y-1/2 h-12 w-12 rounded bg-white/10 text-white text-2xl"
-            onClick={() => setViewer((v) => (v! + 1) % items.length)}
+            onClick={() => setViewer((v) => ((v ?? 0) + 1) % items.length)}
             title="Next"
           >
             ›
@@ -797,7 +879,12 @@ function PortfolioWin95Window({
 
           <div className="max-w-[94vw] max-h-[88vh]">
             {items[viewer].type === "image" ? (
-              <img src={items[viewer].src} alt="" className="max-w-[94vw] max-h-[88vh] object-contain" />
+              <img
+                src={items[viewer].src}
+                alt=""
+                className="max-w-[94vw] max-h-[88vh] object-contain"
+                onError={(e) => (e.currentTarget.style.display = "none")}
+              />
             ) : (
               <video
                 src={items[viewer].src}
@@ -807,6 +894,7 @@ function PortfolioWin95Window({
                 loop
                 playsInline
                 controls={false}
+                onError={(e) => (e.currentTarget.style.display = "none")}
               />
             )}
           </div>
@@ -828,9 +916,7 @@ function useCursorTrail(enabled: boolean) {
       return;
     }
 
-    const els: (HTMLElement | null)[] = Array.from({ length: 10 }, (_, i) =>
-      document.getElementById(`ktrail-${i}`) as HTMLElement | null
-    );
+    const els: (HTMLElement | null)[] = Array.from({ length: 10 }, (_, i) => document.getElementById(`ktrail-${i}`) as HTMLElement | null);
 
     let head = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
     const pts = Array.from({ length: 10 }, () => ({ x: head.x, y: head.y }));
@@ -846,12 +932,14 @@ function useCursorTrail(enabled: boolean) {
     window.addEventListener("mousemove", onMove, { passive: true });
 
     const tick = () => {
+      // lead point eases toward cursor
       pts[0].x += (head.x - pts[0].x) * 0.25;
       pts[0].y += (head.y - pts[0].y) * 0.25;
 
+      // followers ease toward the previous point (fixed Y easing)
       for (let i = 1; i < pts.length; i++) {
         pts[i].x += (pts[i - 1].x - pts[i].x) * 0.25;
-        pts[i].y += (pts[i - 1].y - pts[i - 1].y) * 0.25; // intentional small drift
+        pts[i].y += (pts[i - 1].y - pts[i].y) * 0.25;
       }
 
       const idle = Date.now() - lastMove > 1200;
@@ -890,10 +978,35 @@ function RootDesktopPage() {
   ]);
 
   const icons = [
-    { x: "18vw", y: "18vh", label: "Design portfolio", icon: ICON_PORTFOLIO, onOpen: () => navigate("/portfolio") },
-    { x: "26vw", y: "26vh", label: "Lab // blog", icon: ICON_LAB, onOpen: () => navigate("/lab") },
-    { x: "34vw", y: "20vh", label: "buy cool stuff IRL", icon: ICON_IRL, onOpen: () => window.open("https://wnacry.com", "_blank", "noopener,noreferrer") },
-    { x: "42vw", y: "26vh", label: "contact info", icon: ICON_CONTACT, onOpen: () => setContactOpen(true) },
+    {
+      x: "18vw",
+      y: "18vh",
+      label: "Design portfolio",
+      icon: ICON_PORTFOLIO,
+      onOpen: () => navigate("/portfolio"),
+    },
+    {
+      x: "26vw",
+      y: "26vh",
+      label: "Lab // blog",
+      icon: ICON_LAB,
+      onOpen: () => navigate("/lab"),
+    },
+    {
+      x: "34vw",
+      y: "20vh",
+      label: "buy cool stuff IRL",
+      icon: ICON_IRL,
+      onOpen: () =>
+        window.open("https://wnacry.com", "_blank", "noopener,noreferrer"),
+    },
+    {
+      x: "42vw",
+      y: "26vh",
+      label: "contact info",
+      icon: ICON_CONTACT,
+      onOpen: () => setContactOpen(true),
+    },
   ];
 
   const [cacheBust] = useState(() => String(Date.now()));
@@ -925,7 +1038,14 @@ function RootDesktopPage() {
           }}
           title={it.label}
         >
-          <img src={it.icon} alt="" className="h-20 w-20 object-contain" loading="eager" decoding="async" />
+          <img
+            src={it.icon}
+            alt=""
+            className="h-20 w-20 object-contain"
+            loading="eager"
+            decoding="async"
+            onError={(e) => (e.currentTarget.style.display = "none")}
+          />
           <div className="mt-1 text-center text-[13px] leading-4">
             <span className="inline-block px-1.5 py-[3px] rounded-sm bg-black/40 text-white shadow-[0_0_0_1px_rgba(255,255,255,.15)]">
               {it.label}
@@ -945,6 +1065,7 @@ function RootDesktopPage() {
             className="h-20 w-20 object-contain"
             loading="eager"
             decoding="async"
+            onError={(e) => (e.currentTarget.style.display = "none")}
           />
           <div className="mt-1 text-center text-[13px] leading-4">
             <span className="inline-block px-1.5 py-[3px] rounded-sm bg-black/40 text-white shadow-[0_0_0_1px_rgba(255,255,255,.15)]">
@@ -971,148 +1092,15 @@ function RootDesktopPage() {
    │ Portfolio Desktop (/portfolio)                                           │
    ╰──────────────────────────────────────────────────────────────────────────╯ */
 
-function IPadOverlay({
-  open,
-  mode,
-  onClose,
-  items,
-  viewer,
-  setViewer,
-}: {
-  open: boolean;
-  mode: "none" | "portfolio" | "rates" | "contact";
-  onClose: () => void;
-  items: { type: "img" | "video"; src: string }[];
-  viewer: { i: number } | null;
-  setViewer: (v: { i: number } | null) => void;
-}) {
-  return (
-    <div
-      className="absolute left-1/2 bottom-0 -translate-x-1/2"
-      style={{
-        width: "min(980px, 90vw)",
-        transform: `translate(-50%, ${open ? "0" : "110%"})`,
-        transition: "transform .32s cubic-bezier(.2,.8,.2,1)",
-        zIndex: 7,
-        pointerEvents: open ? "auto" : "none",
-      }}
-    >
-      <div className="relative">
-        <img
-          src={PF_IPAD}
-          alt=""
-          className="w-full h-auto select-none"
-          draggable={false}
-        />
-
-        <button
-          onClick={onClose}
-          className="absolute right-[2.5%] h-8 w-8 rounded bg-black/55 text-white text-lg"
-          title="Close"
-          style={{ border: "1px solid rgba(255,255,255,.65)", top: "8%" }}
-        >
-          ×
-        </button>
-
-        <div
-          className="absolute"
-          style={{
-            left: "12.5%",
-            top: "18%",
-            width: "75%",
-            height: "62%",
-            background: "#111",
-            borderRadius: 8,
-            overflow: "hidden",
-            boxShadow: "inset 0 0 0 1px rgba(255,255,255,.06)",
-          }}
-        >
-          {mode === "portfolio" && (
-            <div className="h-full w-full p-3 overflow-auto">
-              <div className="grid gap-3 sm:grid-cols-3 md:grid-cols-4">
-                {items.map((it, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setViewer({ i })}
-                    className="aspect-[4/3] bg-[#111] rounded-[6px] overflow-hidden"
-                    style={{ boxShadow: "0 6px 0 rgba(0,0,0,.22)" }}
-                  >
-                    {it.type === "img" ? (
-                      <img
-                        src={it.src}
-                        alt={`work ${i + 1}`}
-                        className="h-full w-full object-cover"
-                        loading="lazy"
-                        decoding="async"
-                      />
-                    ) : (
-                      <video
-                        src={it.src}
-                        className="h-full w-full object-cover"
-                        autoPlay
-                        muted
-                        loop
-                        playsInline
-                      />
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {mode === "rates" && <RatesPadContent />}
-          {mode === "contact" && <ContactPadContent />}
-        </div>
-      </div>
-
-      {viewer && mode === "portfolio" && (
-        <div className="fixed inset-0 bg-black/85 grid place-items-center" style={{ zIndex: 8 }}>
-          <button
-            className="absolute left-6 top-1/2 -translate-y-1/2 h-10 w-10 rounded bg-white/15 text-white text-xl"
-            onClick={() => setViewer({ i: (viewer.i + items.length - 1) % items.length })}
-            title="Prev"
-          >‹</button>
-          <div className="max-w-[92vw] max-h-[84vh]">
-            {items[viewer.i].type === "img" ? (
-              <img src={items[viewer.i].src} alt="" className="max-h-[84vh] max-w-[92vw] object-contain" />
-            ) : (
-              <video src={items[viewer.i].src} className="max-h-[84vh] max-w-[92vw] object-contain" autoPlay muted loop playsInline />
-            )}
-          </div>
-          <button
-            className="absolute right-6 top-1/2 -translate-y-1/2 h-10 w-10 rounded bg-white/15 text-white text-xl"
-            onClick={() => setViewer({ i: (viewer.i + 1) % items.length })}
-            title="Next"
-          >›</button>
-          <button
-            className="absolute right-6 top-6 h-9 px-3 rounded bg-white/15 text-white"
-            onClick={() => setViewer(null)}
-            title="Close"
-          >Close</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ─────────────────────────────── Portfolio (CS scene) ─────────────────────────────── */
-
-const BG = "/assets/kabuto/portfolio/BG.png";
-const OV = "/assets/kabuto/portfolio/overlay.png";
-const P1 = "/assets/kabuto/portfolio/person01.png";
-const P2 = "/assets/kabuto/portfolio/person02.png";
-const P3 = "/assets/kabuto/portfolio/person03.png";
-const IPAD = "/assets/kabuto/portfolio/ipad.png";
-const SFX_FIRE = "/sfx/fire.mp3";
-
 function useStageAnchor() {
   const [m, setM] = React.useState({ scale: 1, ox: 0, oy: 0 });
   React.useEffect(() => {
     const recalc = () => {
-      const vw = window.innerWidth, vh = window.innerHeight;
+      const vw = window.innerWidth,
+        vh = window.innerHeight;
       const s = Math.max(vw / 1920, vh / 1080);
-      const rw = 1920 * s, rh = 1080 * s;
+      const rw = 1920 * s,
+        rh = 1080 * s;
       setM({ scale: s, ox: (vw - rw) / 2, oy: (vh - rh) / 2 });
     };
     recalc();
@@ -1122,9 +1110,18 @@ function useStageAnchor() {
   return m;
 }
 
-type Person = { key: "rates" | "portfolio" | "contact"; src: string; onClick: () => void };
-function useAlphaHover(persons: Person[], anchor: { scale: number; ox: number; oy: number }) {
-  const canv = React.useRef<Record<string, CanvasRenderingContext2D | null>>({});
+type Person = {
+  key: "rates" | "portfolio" | "contact";
+  src: string;
+  onClick: () => void;
+};
+function useAlphaHover(
+  persons: Person[],
+  anchor: { scale: number; ox: number; oy: number },
+) {
+  const canv = React.useRef<Record<string, CanvasRenderingContext2D | null>>(
+    {},
+  );
   const [hover, setHover] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -1135,7 +1132,8 @@ function useAlphaHover(persons: Person[], anchor: { scale: number; ox: number; o
       img.src = p.src;
       img.onload = () => {
         const c = document.createElement("canvas");
-        c.width = 1920; c.height = 1080;
+        c.width = 1920;
+        c.height = 1080;
         const cx = c.getContext("2d", { willReadFrequently: true });
         cx?.drawImage(img, 0, 0, 1920, 1080);
         canv.current[p.key] = cx;
@@ -1147,13 +1145,19 @@ function useAlphaHover(persons: Person[], anchor: { scale: number; ox: number; o
     const onMove = (e: MouseEvent) => {
       const x = (e.clientX - anchor.ox) / anchor.scale;
       const y = (e.clientY - anchor.oy) / anchor.scale;
-      if (x < 0 || y < 0 || x >= 1920 || y >= 1080) { setHover(null); return; }
+      if (x < 0 || y < 0 || x >= 1920 || y >= 1080) {
+        setHover(null);
+        return;
+      }
       let hit: string | null = null;
       for (const p of persons) {
         const cx = canv.current[p.key];
         if (!cx) continue;
         const a = cx.getImageData(x | 0, y | 0, 1, 1).data[3];
-        if (a > 10) { hit = p.key; break; }
+        if (a > 10) {
+          hit = p.key;
+          break;
+        }
       }
       setHover(hit);
     };
@@ -1164,31 +1168,9 @@ function useAlphaHover(persons: Person[], anchor: { scale: number; ox: number; o
   return hover;
 }
 
-function Nameplate({ x, y, label }: { x: number; y: number; label: string }) {
-  return (
-    <div
-      className="absolute px-1.5 py-[2px] text-[12px]"
-      style={{
-        left: x, top: y,
-        transform: "translate(-50%, -100%)",
-        background: "rgba(0,0,0,.65)",
-        border: "1px solid rgba(255,255,255,.75)",
-        color: "#ededed",
-        whiteSpace: "nowrap",
-        borderRadius: 2,
-        boxShadow: "0 0 0 1px rgba(0,0,0,.35) inset",
-      }}
-    >
-      {label}
-    </div>
-  );
-}
-
-type PadMode = "portfolio" | "rates" | "contact" | null;
-
 function PortfolioPage(): JSX.Element {
   const fireRef = React.useRef<HTMLAudioElement | null>(null);
-  
+
   React.useEffect(() => {
     const a = new Audio("/sfx/fire.mp3");
     a.preload = "auto";
@@ -1196,7 +1178,12 @@ function PortfolioPage(): JSX.Element {
     fireRef.current = a;
   }, []);
   const fire = React.useCallback(() => {
-    try { if (fireRef.current) { fireRef.current.currentTime = 0; void fireRef.current.play(); } } catch {}
+    try {
+      if (fireRef.current) {
+        fireRef.current.currentTime = 0;
+        void fireRef.current.play();
+      }
+    } catch {}
   }, []);
 
   usePreloadImages([
@@ -1224,8 +1211,6 @@ function PortfolioPage(): JSX.Element {
   const gunTX = (mouse.x - 0.5) * 32;
   const gunTY = (mouse.y - 0.5) * 18;
 
-  const [pad, setPad] = React.useState<null | "portfolio" | "rates" | "contact">(null);
-  const [padVisible, setPadVisible] = React.useState(false);
   const [gunDown, setGunDown] = React.useState(false);
   const anim = React.useRef(false);
 
@@ -1235,22 +1220,16 @@ function PortfolioPage(): JSX.Element {
     fire();
     setGunDown(true);
     await new Promise((r) => setTimeout(r, 380));
-    setPad(kind);
-    await new Promise((r) => setTimeout(r, 20));
-    setPadVisible(true);
-    await new Promise((r) => setTimeout(r, 420));
-    anim.current = false;
-  };
 
-  const closePad = async () => {
-    if (anim.current) return;
-    anim.current = true;
-    fire();
-    setPadVisible(false);
-    await new Promise((r) => setTimeout(r, 420));
-    setPad(null);
-    setGunDown(false);
-    await new Promise((r) => setTimeout(r, 360));
+    // route instead of toggling unused pad/padVisible
+    if (kind === "rates") {
+      navigate("/commissions");
+    } else if (kind === "contact") {
+      navigate("/"); // contact lives on the root (Notepad)
+    }
+
+    // lift gun back up shortly after (purely visual)
+    setTimeout(() => setGunDown(false), 420);
     anim.current = false;
   };
 
@@ -1258,25 +1237,40 @@ function PortfolioPage(): JSX.Element {
 
   const persons = React.useMemo(
     () => [
-      { key: "rates" as const,     src: "/assets/kabuto/portfolio/person01.png", onClick: () => openPad("rates") },
-      { key: "portfolio" as const, src: "/assets/kabuto/portfolio/person02.png", onClick: () => { fire(); setPfWinOpen(true); } },
-      { key: "contact" as const,   src: "/assets/kabuto/portfolio/person03.png", onClick: () => openPad("contact") },
+      {
+        key: "rates" as const,
+        src: "/assets/kabuto/portfolio/person01.png",
+        onClick: () => openPad("rates"),
+      },
+      {
+        key: "portfolio" as const,
+        src: "/assets/kabuto/portfolio/person02.png",
+        onClick: () => {
+          fire();
+          setPfWinOpen(true);
+        },
+      },
+      {
+        key: "contact" as const,
+        src: "/assets/kabuto/portfolio/person03.png",
+        onClick: () => openPad("contact"),
+      },
     ],
-    [openPad, fire]
+    [openPad, fire],
   );
 
   const hover = useAlphaHover(
-    persons.map(p => ({ key: p.key, src: p.src, onClick: p.onClick })),
-    m
+    persons.map((p) => ({ key: p.key, src: p.src, onClick: p.onClick })),
+    m,
   );
 
   const [pfItems, setPfItems] = React.useState<PortfolioItem[]>(() =>
-    loadPortfolio().filter(p => p.published)
+    loadPortfolio().filter((p) => p.published),
   );
   useEffect(() => {
     const onChange = (e: any) => {
       if (e.detail?.type === "portfolio") {
-        setPfItems(loadPortfolio().filter(p => p.published));
+        setPfItems(loadPortfolio().filter((p) => p.published));
       }
     };
     window.addEventListener("kabuto:data", onChange as any);
@@ -1288,14 +1282,26 @@ function PortfolioPage(): JSX.Element {
       <div
         className="absolute"
         style={{
-          left: 0, top: 0, width: 1920, height: 1080,
+          left: 0,
+          top: 0,
+          width: 1920,
+          height: 1080,
           transform: `translate(${m.ox}px, ${m.oy}px) scale(${m.scale})`,
           transformOrigin: "top left",
           zIndex: 1,
         }}
       >
-        <img src="/assets/kabuto/portfolio/BG.png" alt="" draggable={false}
-             className="absolute left-0 top-0" style={{ width: 1920, height: 1080 }} />
+        <img
+          src="/assets/kabuto/portfolio/BG.png"
+          alt=""
+          draggable={false}
+          className="absolute left-0 top-0"
+          style={{ width: 1920, height: 1080 }}
+          onError={(e) => {
+            e.currentTarget.removeAttribute("src");
+            e.currentTarget.style.background = "#000";
+          }}
+        />
 
         {persons.map((p) => (
           <img
@@ -1305,11 +1311,16 @@ function PortfolioPage(): JSX.Element {
             draggable={false}
             className="absolute left-0 top-0 pointer-events-none"
             style={{
-              width: 1920, height: 1080, zIndex: 2,
+              width: 1920,
+              height: 1080,
+              zIndex: 2,
               transform: hover === p.key ? "scale(1.025)" : "scale(1)",
               transformOrigin: "center bottom",
               transition: "transform 140ms ease",
               filter: "drop-shadow(0 2px 12px rgba(0,0,0,.45))",
+            }}
+            onError={(e) => {
+              e.currentTarget.style.opacity = "0";
             }}
           />
         ))}
@@ -1319,16 +1330,23 @@ function PortfolioPage(): JSX.Element {
           alt=""
           className="absolute left-0 top-0 pointer-events-none"
           style={{ width: 1920, height: 1080, zIndex: 3 }}
+          onError={(e) => (e.currentTarget.style.opacity = "0")}
         />
 
         <button
           aria-label={hover ?? "scene"}
           onClick={() => {
-            const target = persons.find(p => p.key === hover);
+            const target = persons.find((p) => p.key === hover);
             if (target) target.onClick();
           }}
           className="absolute left-0 top-0"
-          style={{ width: 1920, height: 1080, zIndex: 4, background: "transparent", border: "none" }}
+          style={{
+            width: 1920,
+            height: 1080,
+            zIndex: 4,
+            background: "transparent",
+            border: "none",
+          }}
         />
       </div>
 
@@ -1348,6 +1366,7 @@ function PortfolioPage(): JSX.Element {
           objectFit: "contain",
           zIndex: 4,
         }}
+        onError={(e) => (e.currentTarget.style.display = "none")}
       />
 
       {pfWinOpen && (
@@ -1355,7 +1374,7 @@ function PortfolioPage(): JSX.Element {
           items={pfItems.map((p) =>
             p.type === "image"
               ? { type: "image" as const, src: p.url }
-              : { type: "video" as const, src: p.url }
+              : { type: "video" as const, src: p.url },
           )}
           onClose={() => setPfWinOpen(false)}
         />
@@ -1366,204 +1385,34 @@ function PortfolioPage(): JSX.Element {
 
 /* ===================== iPad contents (portfolio LIVE) ===================== */
 
-function PortfolioPadContentLive() {
-  const [rows, setRows] = useState<PortfolioItem[]>(() =>
-    loadPortfolio().filter(p => p.published)
-  );
-  useEffect(() => {
-    const onChange = (e: any) => {
-      if (e.detail?.type === "portfolio") {
-        setRows(loadPortfolio().filter(p => p.published));
-      }
-    };
-    window.addEventListener("kabuto:data", onChange as any);
-    return () => window.removeEventListener("kabuto:data", onChange as any);
-  }, []);
-
-  const items = rows.map((p) => (p.type === "image" ? { type: "img" as const, src: p.url } : { type: "video" as const, src: p.url }));
-  const [viewer, setViewer] = useState<number | null>(null);
-
-  return (
-    <div className="w-full h-full p-3">
-      <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-3">
-        {items.map((it, i) => (
-          <button
-            key={i}
-            onClick={() => setViewer(i)}
-            className="aspect-video overflow-hidden rounded-md bg-black/30"
-          >
-            {it.type === "img" ? (
-              <img src={it.src} className="h-full w-full object-cover" loading="lazy" />
-            ) : (
-              <video src={it.src} className="h-full w-full object-cover" muted autoPlay loop playsInline />
-            )}
-          </button>
-        ))}
-      </div>
-
-      {viewer !== null && (
-        <div className="fixed inset-0 z-[9999] bg-black/85 grid place-items-center">
-          <button
-            className="absolute right-6 top-6 h-10 w-10 rounded bg-white/15 text-white text-xl"
-            onClick={() => setViewer(null)}
-          >×</button>
-          {items[viewer].type === "img" ? (
-            <img src={items[viewer].src} className="max-w-[92vw] max-h-[86vh] object-contain" />
-          ) : (
-            <video src={items[viewer].src} className="max-w-[92vw] max-h-[86vh] object-contain" muted autoPlay loop playsInline />
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function RatesPadContent() {
-  type PriceItem = { name: string; price: string; note?: string; includes?: string[] };
-  type PriceGroup = { title: string; items: PriceItem[] };
-
-  const pricing: PriceGroup[] = [
-    {
-      title: "Short-form (9:16 / 1:1)",
-      items: [
-        { name: "≤ 30s",    price: "£25 / 24–48h" },
-        { name: "31–60s",   price: "£35 / 24–48h" },
-        { name: "61–120s",  price: "£50 / 48–72h" },
-      ],
-    },
-    {
-      title: "YouTube (16:9)",
-      items: [
-        { name: "≤ 6 min",   price: "£80 / 2–4d" },
-        { name: "6–12 min",  price: "£120 / 3–5d" },
-        { name: "12–20 min", price: "£170 / 5–7d" },
-      ],
-    },
-    {
-      title: "Thumbnails & metadata",
-      items: [
-        { name: "Thumbnail design",      price: "£20" },
-        { name: "Title & tags research", price: "£10" },
-        { name: "Bundle (thumb + copy)", price: "£25" },
-      ],
-    },
-    {
-      title: "IRL assistance (London)",
-      items: [
-        { name: "Camera op / runner", price: "£120 / 4h • £220 / 8h" },
-        { name: "Live producing / OBS", price: "£160 / 4h • £280 / 8h" },
-        { name: "Kit (mics, lights)", price: "£20–40 / session" },
-      ],
-    },
-  ];
-
-  return (
-    <div className="w-full h-full overflow-auto px-4 py-3 text-white/90 text-[13px]">
-      <div className="grid gap-3 md:grid-cols-2">
-        {pricing.map((group, gi) => (
-          <div
-            key={gi}
-            className="rounded-[8px] border border-white/10 bg-[#141414] shadow-[0_8px_24px_rgba(0,0,0,.35)]"
-          >
-            <div className="px-3 py-2 border-b border-white/10 text-[var(--accent)] font-medium">
-              {group.title}
-            </div>
-            <div className="p-3">
-              <div className="grid gap-1">
-                {group.items.map((it, ii) => (
-                  <div
-                    key={ii}
-                    className="grid grid-cols-[1fr_auto] items-start gap-x-3 border-b border-dashed border-white/10 pb-1.5 last:border-b-0"
-                  >
-                    <div className="min-w-0">
-                      <div className="leading-tight">{it.name}</div>
-                      {it.note && (
-                        <div className="text-[11px] opacity-70 leading-tight">{it.note}</div>
-                      )}
-                      {it.includes && (
-                        <ul className="mt-1 list-disc pl-4 text-[11px] opacity-80">
-                          {it.includes.map((inc, k) => (
-                            <li key={k}>{inc}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                    <div className="text-[var(--accent)] whitespace-nowrap leading-tight">
-                      {it.price}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-3 text-[11px] opacity-60">
-        Turnaround is typical; rush or retainer options available on request.
-      </div>
-    </div>
-  );
-}
-
-function ContactPadContent() {
-  return (
-    <div className="w-full h-full relative text-white/90 text-[14px]">
-      <div className="p-4 pr-[180px] pb-[180px] md:pr-[220px] md:pb-[220px]">
-        <div className="space-y-2">
-          <div>
-            contact –{" "}
-            <a className="underline" href="mailto:contact@kabuto.studio">
-              contact@kabuto.studio
-            </a>
-          </div>
-          <div>discord: kabuto.</div>
-          <div>
-            IG –{" "}
-            <a
-              className="underline"
-              href="https://instagram.com/kbt2k"
-              target="_blank"
-              rel="noreferrer"
-            >
-              kbt2k
-            </a>
-          </div>
-        </div>
-      </div>
-
-      <img
-        src="/assets/kabuto/portfolio/self.png"
-        alt="profile"
-        loading="lazy"
-        decoding="async"
-        className="
-          absolute bottom-3 right-3
-          w-[160px] h-[160px]
-          md:w-[200px] md:h-[200px]
-          rounded-[10px] object-cover
-          border border-white/25
-          shadow-[0_8px_26px_rgba(0,0,0,.55)]
-          bg-black/20
-        "
-      />
-    </div>
-  );
-}
-
 function ClassicTaskbar() {
   const [time, setTime] = useState(() =>
     new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
   );
   useEffect(() => {
     const id = setInterval(() => {
-      setTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+      setTime(
+        new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      );
     }, 15000);
     return () => clearInterval(id);
   }, []);
 
-  const bevelUp = { borderTop: "1px solid #fff", borderLeft: "1px solid #fff", borderRight: "1px solid #404040", borderBottom: "1px solid #404040" };
-  const bevelDown = { borderTop: "1px solid #808080", borderLeft: "1px solid #808080", borderRight: "1px solid #fff", borderBottom: "1px solid #fff" };
+  const bevelUp = {
+    borderTop: "1px solid #fff",
+    borderLeft: "1px solid #fff",
+    borderRight: "1px solid #404040",
+    borderBottom: "1px solid #404040",
+  };
+  const bevelDown = {
+    borderTop: "1px solid #808080",
+    borderLeft: "1px solid #808080",
+    borderRight: "1px solid #fff",
+    borderBottom: "1px solid #fff",
+  };
 
   return (
     <div
@@ -1856,6 +1705,7 @@ function EsportsPage() {
                 className="w-full h-auto object-cover"
                 loading="lazy"
                 decoding="async"
+                onError={(e) => (e.currentTarget.style.display = "none")}
               />
             </div>
           ))}
@@ -1870,32 +1720,80 @@ function EsportsPage() {
    ╰──────────────────────────────────────────────────────────────────────────╯ */
 function CommissionsPage() {
   usePreloadImages(RATES_THUMBS);
-  type PriceItem = { name: string; price: string; note?: string; includes?: string[] };
+  type PriceItem = {
+    name: string;
+    price: string;
+    note?: string;
+    includes?: string[];
+  };
   type PriceGroup = { title: string; items: PriceItem[] };
   const pricing: PriceGroup[] = [
-    { title: "Short-form (9:16 / 1:1)", items: [{ name: "≤ 30s", price: "£25 / 24–48h" }, { name: "31–60s", price: "£35 / 24–48h" }, { name: "61–120s", price: "£50 / 48–72h" }] },
-    { title: "YouTube (16:9)", items: [{ name: "≤ 6 min", price: "£80 / 2–4d" }, { name: "6–12 min", price: "£120 / 3–5d" }, { name: "12–20 min", price: "£170 / 5–7d" }] },
-    { title: "Thumbnails & metadata", items: [{ name: "Thumbnail design", price: "£20" }, { name: "Title & tags research", price: "£10" }, { name: "Bundle (thumb + copy)", price: "£25" }] },
-    { title: "IRL assistance (London)", items: [{ name: "Camera op / runner", price: "£120 / 4h • £220 / 8h" }, { name: "Live producing / OBS", price: "£160 / 4h • £280 / 8h" }, { name: "Kit (mics, lights)", price: "£20–40 / session" }] },
+    {
+      title: "Short-form (9:16 / 1:1)",
+      items: [
+        { name: "≤ 30s", price: "£25 / 24–48h" },
+        { name: "31–60s", price: "£35 / 24–48h" },
+        { name: "61–120s", price: "£50 / 48–72h" },
+      ],
+    },
+    {
+      title: "YouTube (16:9)",
+      items: [
+        { name: "≤ 6 min", price: "£80 / 2–4d" },
+        { name: "6–12 min", price: "£120 / 3–5d" },
+        { name: "12–20 min", price: "£170 / 5–7d" },
+      ],
+    },
+    {
+      title: "Thumbnails & metadata",
+      items: [
+        { name: "Thumbnail design", price: "£20" },
+        { name: "Title & tags research", price: "£10" },
+        { name: "Bundle (thumb + copy)", price: "£25" },
+      ],
+    },
+    {
+      title: "IRL assistance (London)",
+      items: [
+        { name: "Camera op / runner", price: "£120 / 4h • £220 / 8h" },
+        { name: "Live producing / OBS", price: "£160 / 4h • £280 / 8h" },
+        { name: "Kit (mics, lights)", price: "£20–40 / session" },
+      ],
+    },
   ];
 
   return (
     <PageShell title="Editing rates">
       <Panel title="About my editing" rightTag="@100k+ audience">
         <p className="text-sm opacity-85 leading-relaxed">
-          I manage and edit for creators and brands across YouTube, TikTok and IG — over <strong>100k followers</strong> across my managed socials.
-          I focus on hooks, pacing, on-beat cuts, clean captions and consistent packaging (titles, thumbnails, metadata).
+          I manage and edit for creators and brands across YouTube, TikTok and
+          IG — over <strong>100k followers</strong> across my managed socials. I
+          focus on hooks, pacing, on-beat cuts, clean captions and consistent
+          packaging (titles, thumbnails, metadata).
         </p>
         <p className="mt-2 text-center text-sm opacity-85">
-          please contact me if you wish to work together — <a href="mailto:contact@kabuto.studio" className="underline">contact@kabuto.studio</a>
+          please contact me if you wish to work together —{" "}
+          <a href="mailto:contact@kabuto.studio" className="underline">
+            contact@kabuto.studio
+          </a>
         </p>
       </Panel>
 
       <Panel title="Example thumbnails" rightTag={`x${RATES_THUMBS.length}`}>
         <div className="grid gap-3 sm:grid-cols-3">
           {RATES_THUMBS.map((src, i) => (
-            <div key={i} className="rounded-[6px] border border-[#4a5a45] overflow-hidden aspect-video bg-[#2f3a2d]">
-              <img src={src} alt={`thumb ${i + 1}`} className="h-full w-full object-cover" loading="lazy" decoding="async" />
+            <div
+              key={i}
+              className="rounded-[6px] border border-[#4a5a45] overflow-hidden aspect-video bg-[#2f3a2d]"
+            >
+              <img
+                src={src}
+                alt={`thumb ${i + 1}`}
+                className="h-full w-full object-cover"
+                loading="lazy"
+                decoding="async"
+                onError={(e) => (e.currentTarget.style.display = "none")}
+              />
             </div>
           ))}
         </div>
@@ -1904,18 +1802,40 @@ function CommissionsPage() {
       <Panel title="Price list" rightTag="GBP">
         <div className="grid gap-3 md:grid-cols-2">
           {pricing.map((group, gi) => (
-            <div key={gi} className="rounded-[6px] border border-[#4a5a45] bg-[#3a4538]">
-              <div className="px-2.5 py-1.5 border-b border-[#4a5a45] text-[var(--accent)] text-[13px]">{group.title}</div>
+            <div
+              key={gi}
+              className="rounded-[6px] border border-[#4a5a45] bg-[#3a4538]"
+            >
+              <div className="px-2.5 py-1.5 border-b border-[#4a5a45] text-[var(--accent)] text-[13px]">
+                {group.title}
+              </div>
               <div className="p-2.5">
                 <div className="grid gap-1">
                   {group.items.map((it, ii) => (
-                    <div key={ii} className="grid grid-cols-[1fr_auto] gap-x-3 items-start border-b border-dashed border-[#2a3328] pb-1.5 last:border-b-0">
+                    <div
+                      key={ii}
+                      className="grid grid-cols-[1fr_auto] gap-x-3 items-start border-b border-dashed border-[#2a3328] pb-1.5 last:border-b-0"
+                    >
                       <div className="min-w-0">
-                        <div className="text-[13px] leading-tight">{it.name}</div>
-                        {it.note && <div className="text-[10px] opacity-70 leading-tight">{it.note}</div>}
-                        {it.includes && (<ul className="mt-1 list-disc pl-4 text-[11px] opacity-80 space-y-0.5">{it.includes.map((inc, k) => (<li key={k}>{inc}</li>))}</ul>)}
+                        <div className="text-[13px] leading-tight">
+                          {it.name}
+                        </div>
+                        {it.note && (
+                          <div className="text-[10px] opacity-70 leading-tight">
+                            {it.note}
+                          </div>
+                        )}
+                        {it.includes && (
+                          <ul className="mt-1 list-disc pl-4 text-[11px] opacity-80 space-y-0.5">
+                            {it.includes.map((inc, k) => (
+                              <li key={k}>{inc}</li>
+                            ))}
+                          </ul>
+                        )}
                       </div>
-                      <div className="text-[var(--accent)] text-[13px] leading-tight whitespace-nowrap">{it.price}</div>
+                      <div className="text-[var(--accent)] text-[13px] leading-tight whitespace-nowrap">
+                        {it.price}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1928,12 +1848,174 @@ function CommissionsPage() {
   );
 }
 
+/* ───────── Upload queue visibility (shared) ───────── */
+type PendingUpload = {
+  id: string;
+  filename: string;
+  bucket: "blog" | "portfolio";
+  status: "pending" | "done" | "error";
+};
+
+function usePendingUploads() {
+  const [list, setList] = React.useState<PendingUpload[]>([]);
+
+  React.useEffect(() => {
+    const addLocalBegin = (e: Event) => {
+      const d = (e as CustomEvent).detail || {};
+      if (!d?.id) return;
+      setList((L) => [
+        {
+          id: d.id,
+          filename: d.filename || d.id,
+          bucket: d.bucket || "portfolio",
+          status: "pending",
+        },
+        ...L,
+      ]);
+    };
+
+    const onSW = (e: MessageEvent) => {
+      const { type, payload } = (e.data || {}) as any;
+      if (!payload?.id) return;
+
+      if (type === "cache-put-ok") {
+        setList((L) =>
+          L.map((x) =>
+            x.id === payload.id ? { ...x, status: "done" } : x,
+          ),
+        );
+        // remove a little after success
+        setTimeout(() => {
+          setList((L) => L.filter((x) => x.id !== payload.id));
+        }, 1200);
+
+        // tell anyone interested that local/<bucket>/<id> is now live
+        window.dispatchEvent(
+          new CustomEvent("kabuto:local-ready", {
+            detail: {
+              bucket: payload.bucket,
+              id: payload.id,
+              url: localUrl(payload.bucket, payload.id),
+            },
+          }),
+        );
+      } else if (type === "cache-put-error") {
+        setList((L) =>
+          L.map((x) =>
+            x.id === payload.id ? { ...x, status: "error" } : x,
+          ),
+        );
+      } else if (type === "cache-put-begin") {
+        // supported by newer sw.js; harmless if not sent
+        setList((L) => {
+          if (L.some((x) => x.id === payload.id)) return L;
+          return [
+            {
+              id: payload.id,
+              filename: payload.filename || payload.id,
+              bucket: payload.bucket || "portfolio",
+              status: "pending",
+            },
+            ...L,
+          ];
+        });
+      }
+    };
+
+    window.addEventListener("kabuto:upload-begin", addLocalBegin as any);
+
+    // Guard message listener for SW
+    const sw = getActiveSW();
+    if (sw) navigator.serviceWorker!.addEventListener("message", onSW);
+
+    const beforeUnload = (ev: BeforeUnloadEvent) => {
+      if (list.some((x) => x.status === "pending")) {
+        ev.preventDefault();
+        ev.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+
+    return () => {
+      window.removeEventListener("kabuto:upload-begin", addLocalBegin as any);
+      if (sw) navigator.serviceWorker!.removeEventListener("message", onSW);
+      window.removeEventListener("beforeunload", beforeUnload);
+    };
+  }, [list]);
+
+  return {
+    list,
+    anyPending: list.some((x) => x.status === "pending"),
+  };
+}
+
+function UploadStatusBar({ list }: { list: PendingUpload[] }) {
+  const pending = list.filter((x) => x.status === "pending");
+  const done = list.filter((x) => x.status === "done");
+  const errored = list.filter((x) => x.status === "error");
+  const safe = list.length === 0;
+
+  return (
+    <div
+      className="fixed left-3 bottom-[52px] z-[9999] rounded-[6px] border px-3 py-2 text-xs shadow-[0_8px_24px_rgba(0,0,0,.35)]"
+      style={{
+        borderColor: safe ? "rgba(72,187,120,.45)" : "rgba(215,198,90,.45)",
+        background:
+          "linear-gradient(180deg, rgba(49,59,47,.96) 0%, rgba(41,50,39,.96) 100%)",
+        color: "#e7f1d6",
+        minWidth: 240,
+      }}
+    >
+      <div className="flex items-center justify-between">
+        <strong className="tracking-wide">
+          {safe ? "All uploads saved" : "Saving uploads…"}
+        </strong>
+        <span style={{ opacity: 0.75 }}>
+          {pending.length} pending
+          {done.length ? ` • ${done.length} done` : ""}
+          {errored.length ? ` • ${errored.length} error` : ""}
+        </span>
+      </div>
+
+      {list.length > 0 && (
+        <div className="mt-1 max-h-36 overflow-auto space-y-1">
+          {list.slice(0, 6).map((u) => (
+            <div key={u.id} className="flex items-center gap-2">
+              <span
+                className="inline-block h-2 w-2 rounded-full"
+                style={{
+                  background:
+                    u.status === "pending"
+                      ? "#d7c65a"
+                      : u.status === "done"
+                      ? "#48bb78"
+                      : "#f87171",
+                }}
+              />
+              <span className="truncate">
+                {u.filename} <span style={{ opacity: 0.6 }}>({u.bucket})</span>
+              </span>
+            </div>
+          ))}
+          {list.length > 6 && (
+            <div style={{ opacity: 0.6 }}>+{list.length - 6} more…</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ╭──────────────────────────────────────────────────────────────────────────╮
    │ Admin                                                                     │
    ╰──────────────────────────────────────────────────────────────────────────╯ */
 function AdminPage() {
+  const uploads = usePendingUploads();
+
   const [authed, setAuthed] = useState<boolean>(false);
-  const [hasPass, setHasPass] = useState<boolean>(!!localStorage.getItem(ADMIN_HASH_KEY));
+  const [hasPass, setHasPass] = useState<boolean>(
+    !!localStorage.getItem(ADMIN_HASH_KEY),
+  );
   const [mode, setMode] = useState<"events" | "posts" | "portfolio">("events");
 
   async function handleSetPassword(e: React.FormEvent<HTMLFormElement>) {
@@ -1958,7 +2040,11 @@ function AdminPage() {
       <PageShell title="Admin – Set Password">
         <form onSubmit={handleSetPassword} className="grid gap-3 max-w-sm">
           <label className="text-sm">New password</label>
-          <input name="pw" type="password" className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1 text-sm" />
+          <input
+            name="pw"
+            type="password"
+            className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1 text-sm"
+          />
           <button className="inline-flex items-center gap-2 rounded border border-[#4a5a45] bg-[#3a4538] px-3 py-1 text-sm hover:border-[var(--primary)]">
             <Unlock className="h-4 w-4" /> Set password
           </button>
@@ -1971,7 +2057,11 @@ function AdminPage() {
       <PageShell title="Admin – Login">
         <form onSubmit={handleLogin} className="grid gap-3 max-w-sm">
           <label className="text-sm">Password</label>
-          <input name="pw" type="password" className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1 text-sm" />
+          <input
+            name="pw"
+            type="password"
+            className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1 text-sm"
+          />
           <button className="inline-flex items-center gap-2 rounded border border-[#4a5a45] bg-[#3a4538] px-3 py-1 text-sm hover:border-[var(--primary)]">
             <Lock className="h-4 w-4" /> Login
           </button>
@@ -1981,12 +2071,46 @@ function AdminPage() {
 
   return (
     <PageShell title="Admin">
+      <UploadStatusBar list={uploads.list} />
       <div className="flex gap-2 mb-4">
-        <button onClick={() => setMode("events")} className={`rounded px-3 py-1 text-sm border ${mode === "events" ? "border-[var(--primary)] bg-[#404b3f]" : "border-[#4a5a45] bg-[#3a4538]"}`}>Events</button>
-        <button onClick={() => setMode("posts")} className={`rounded px-3 py-1 text-sm border ${mode === "posts" ? "border-[var(--primary)] bg-[#404b3f]" : "border-[#4a5a45] bg-[#3a4538]"}`}>Posts</button>
-        <button onClick={() => setMode("portfolio")} className={`rounded px-3 py-1 text-sm border ${mode === "portfolio" ? "border-[var(--primary)] bg-[#404b3f]" : "border-[#4a5a45] bg-[#3a4538]"}`}>Portfolio</button>
+        <button
+          onClick={() => setMode("events")}
+          className={`rounded px-3 py-1 text-sm border ${
+            mode === "events"
+              ? "border-[var(--primary)] bg-[#404b3f]"
+              : "border-[#4a5a45] bg-[#3a4538]"
+          }`}
+        >
+          Events
+        </button>
+        <button
+          onClick={() => setMode("posts")}
+          className={`rounded px-3 py-1 text-sm border ${
+            mode === "posts"
+              ? "border-[var(--primary)] bg-[#404b3f]"
+              : "border-[#4a5a45] bg-[#3a4538]"
+          }`}
+        >
+          Posts
+        </button>
+        <button
+          onClick={() => setMode("portfolio")}
+          className={`rounded px-3 py-1 text-sm border ${
+            mode === "portfolio"
+              ? "border-[var(--primary)] bg-[#404b3f]"
+              : "border-[#4a5a45] bg-[#3a4538]"
+          }`}
+        >
+          Portfolio
+        </button>
       </div>
-      {mode === "events" ? <AdminEvents /> : mode === "posts" ? <AdminPosts /> : <AdminPortfolio />}
+      {mode === "events" ? (
+        <AdminEvents />
+      ) : mode === "posts" ? (
+        <AdminPosts />
+      ) : (
+        <AdminPortfolio />
+      )}
     </PageShell>
   );
 }
@@ -2031,15 +2155,52 @@ function AdminEvents() {
     <div className="grid gap-4">
       <Panel title="Add event" rightTag="new">
         <div className="grid md:grid-cols-6 gap-2 text-xs">
-          <input placeholder="Game" value={draft.game} onChange={(e) => setDraft({ ...draft, game: e.target.value })} className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1" />
-          <input placeholder="Date (YYYY-MM-DD)" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1" />
-          <input placeholder="Location" value={draft.location} onChange={(e) => setDraft({ ...draft, location: e.target.value })} className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1" />
-          <input placeholder="Event" value={draft.event} onChange={(e) => setDraft({ ...draft, event: e.target.value })} className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1" />
-          <input placeholder="Placement (e.g., 12/128 or 1st)" value={draft.placement} onChange={(e) => setDraft({ ...draft, placement: e.target.value })} className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1" />
-          <label className="inline-flex items-center gap-2 px-1"><input type="checkbox" checked={draft.published} onChange={(e) => setDraft({ ...draft, published: e.target.checked })} /><span>Published</span></label>
+          <input
+            placeholder="Game"
+            value={draft.game}
+            onChange={(e) => setDraft({ ...draft, game: e.target.value })}
+            className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1"
+          />
+          <input
+            placeholder="Date (YYYY-MM-DD)"
+            value={draft.date}
+            onChange={(e) => setDraft({ ...draft, date: e.target.value })}
+            className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1"
+          />
+          <input
+            placeholder="Location"
+            value={draft.location}
+            onChange={(e) => setDraft({ ...draft, location: e.target.value })}
+            className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1"
+          />
+          <input
+            placeholder="Event"
+            value={draft.event}
+            onChange={(e) => setDraft({ ...draft, event: e.target.value })}
+            className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1"
+          />
+          <input
+            placeholder="Placement (e.g., 12/128 or 1st)"
+            value={draft.placement}
+            onChange={(e) => setDraft({ ...draft, placement: e.target.value })}
+            className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1"
+          />
+          <label className="inline-flex items-center gap-2 px-1">
+            <input
+              type="checkbox"
+              checked={draft.published}
+              onChange={(e) =>
+                setDraft({ ...draft, published: e.target.checked })
+              }
+            />
+            <span>Published</span>
+          </label>
         </div>
         <div className="mt-2">
-          <button onClick={addRow} className="inline-flex items-center gap-2 rounded border border-[#4a5a45] bg-[#3a4538] px-3 py-1 text-sm hover:border-[var(--primary)]">
+          <button
+            onClick={addRow}
+            className="inline-flex items-center gap-2 rounded border border-[#4a5a45] bg-[#3a4538] px-3 py-1 text-sm hover:border-[var(--primary)]"
+          >
             <Plus className="h-4 w-4" /> Add
           </button>
         </div>
@@ -2074,35 +2235,45 @@ function AdminEvents() {
                       <td className="px-2 py-2">
                         <input
                           value={r.game}
-                          onChange={(e) => updRow(r.id, { game: e.target.value })}
+                          onChange={(e) =>
+                            updRow(r.id, { game: e.target.value })
+                          }
                           className="w-full bg-transparent outline-none"
                         />
                       </td>
                       <td className="px-2 py-2">
                         <input
                           value={r.date}
-                          onChange={(e) => updRow(r.id, { date: e.target.value })}
+                          onChange={(e) =>
+                            updRow(r.id, { date: e.target.value })
+                          }
                           className="w-full bg-transparent outline-none"
                         />
                       </td>
                       <td className="px-2 py-2">
                         <input
                           value={r.location}
-                          onChange={(e) => updRow(r.id, { location: e.target.value })}
+                          onChange={(e) =>
+                            updRow(r.id, { location: e.target.value })
+                          }
                           className="w-full bg-transparent outline-none"
                         />
                       </td>
                       <td className="px-2 py-2">
                         <input
                           value={r.event}
-                          onChange={(e) => updRow(r.id, { event: e.target.value })}
+                          onChange={(e) =>
+                            updRow(r.id, { event: e.target.value })
+                          }
                           className="w-full bg-transparent outline-none"
                         />
                       </td>
                       <td className="px-2 py-2">
                         <input
                           value={r.placement}
-                          onChange={(e) => updRow(r.id, { placement: e.target.value })}
+                          onChange={(e) =>
+                            updRow(r.id, { placement: e.target.value })
+                          }
                           className="w-full bg-transparent outline-none"
                         />
                       </td>
@@ -2142,8 +2313,15 @@ function AdminEvents() {
   );
 }
 
-/* ───────────────────── Blog media uploads inside AdminPosts ───────────────────── */
-type BlogMedia = { id: string; url: string; filename: string; mime: string };
+/* ───────────────────── Blog media uploads inside AdminPosts — fixed previews ───────────────────── */
+type BlogMedia = {
+  id: string;
+  url: string; // /local/blog/<id>
+  filename: string;
+  mime: string;
+  /** blob:… for instant preview before SW saves the /local entry */
+  previewUrl: string;
+};
 
 function AdminPosts() {
   const [rows, setRows] = useState<Post[]>(() => loadPosts());
@@ -2162,50 +2340,88 @@ function AdminPosts() {
   // session-only list for quick inserts
   const [media, setMedia] = useState<BlogMedia[]>([]);
 
+  // When SW confirms a blog item is saved, refresh any cards still showing preview
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       const { type, payload } = (e.data || {}) as any;
       if (type === "cache-put-ok" && payload?.id && payload?.bucket === "blog") {
-        // SW confirmation; URL is deterministic so nothing to change
+        const theUrl = localUrl("blog", payload.id);
+        // Force any <img>/<video> currently on preview to switch to /local path
+        const imgs = document.querySelectorAll<HTMLImageElement>(
+          `img[data-local-id="${payload.id}"]`,
+        );
+        imgs.forEach((img) => {
+          if (img.src !== theUrl) img.src = theUrl;
+        });
+        const vids = document.querySelectorAll<HTMLVideoElement>(
+          `video[data-local-id="${payload.id}"]`,
+        );
+        vids.forEach((v) => {
+          if (v.src !== theUrl) v.src = theUrl;
+        });
       }
     };
-    navigator.serviceWorker?.addEventListener("message", onMsg);
-    return () => navigator.serviceWorker?.removeEventListener("message", onMsg);
+    const sw = getActiveSW();
+    if (sw) navigator.serviceWorker!.addEventListener("message", onMsg);
+    return () => {
+      if (sw) navigator.serviceWorker!.removeEventListener("message", onMsg);
+    };
   }, []);
-
-  async function sendToSW(file: File, bucket: "blog" | "portfolio" = "blog", preId?: string) {
-    const id = preId || uid();
-    const reg = await navigator.serviceWorker.ready.catch(() => undefined);
-    if (reg?.active) {
-      reg.active.postMessage({
-        type: "cache-put",
-        payload: { id, blob: file, bucket },
-      });
-    } else {
-      alert("Service worker not active; cannot store media.");
-    }
-    return id;
-  }
 
   async function handlePickFiles(files: FileList | null) {
     if (!files || !files.length) return;
+
     for (const f of Array.from(files)) {
       const id = uid();
-      const url = localUrl("blog", id);
+      const local = localUrl("blog", id);
+      const temp = URL.createObjectURL(f); // instant preview
+
+      // Show immediately with temp preview, while rendering tries /local first (fallback to temp)
       const item: BlogMedia = {
         id,
-        url,
+        url: local,
         filename: f.name,
         mime: f.type || "",
+        previewUrl: temp,
       };
-      // show immediately with stable URL
       setMedia((m) => [item, ...m]);
-      void sendToSW(f, "blog", id);
+
+      // Announce upload begin for status bar
+      window.dispatchEvent(
+        new CustomEvent("kabuto:upload-begin", {
+          detail: { id, filename: f.name, bucket: "blog" },
+        }),
+      );
+
+      // Send to SW (guarded)
+      try {
+        const reg = await navigator.serviceWorker.ready.catch(() => undefined);
+        const active = reg?.active ?? getActiveSW();
+        if (active) {
+          active.postMessage({
+            type: "cache-put",
+            payload: { id, blob: f, bucket: "blog" },
+          });
+        } else {
+          console.warn("Service worker not active; cannot store media yet.");
+        }
+      } catch {
+        console.warn("SW postMessage failed; preview will persist until SW ready.");
+      }
+
+      // Cleanup temp later
+      setTimeout(() => URL.revokeObjectURL(temp), 60_000);
     }
   }
 
   function insertAtEnd(text: string) {
-    setDraft((d) => ({ ...d, content: (d.content ? d.content + (d.content.endsWith("\n") ? "" : "\n") : "") + text + "\n" }));
+    setDraft((d) => ({
+      ...d,
+      content:
+        (d.content
+          ? d.content + (d.content.endsWith("\n") ? "" : "\n")
+          : "") + text + "\n",
+    }));
   }
 
   function genSlug(title: string) {
@@ -2230,7 +2446,13 @@ function AdminPosts() {
       "0",
     )}-${String(now.getDate()).padStart(2, "0")}`;
     const slug = draft.slug || genSlug(draft.title);
-    const next: Post = { ...draft, id: uid(), slug, updatedAt: Date.now(), date };
+    const next: Post = {
+      ...draft,
+      id: uid(),
+      slug,
+      updatedAt: Date.now(),
+      date,
+    };
     setRows([next, ...rows]);
     savePosts([next, ...rows]);
     setDraft(empty);
@@ -2275,12 +2497,21 @@ function AdminPosts() {
           <div className="rounded border border-[#4a5a45] p-2">
             <div className="flex items-center gap-2 mb-2">
               <ImageIcon className="h-4 w-4 opacity-80" />
-              <span className="text-xs opacity-90">Upload images/videos to use in this post</span>
+              <span className="text-xs opacity-90">
+                Upload images/videos to use in this post
+              </span>
             </div>
             <div
               className="grid gap-2 text-xs"
-              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-              onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handlePickFiles(e.dataTransfer?.files || null); }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handlePickFiles(e.dataTransfer?.files || null);
+              }}
             >
               <input
                 type="file"
@@ -2290,28 +2521,71 @@ function AdminPosts() {
                 className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1"
               />
               <div className="text-[11px] opacity-70">
-                Drag & drop or use the picker. Stored under <code>/local/blog/&lt;id&gt;</code>. Click “Copy tag” to insert into content.
+                Drag & drop or use the picker. Stored under{" "}
+                <code>/local/blog/&lt;id&gt;</code>. Click “Copy tag” to insert
+                into content.
               </div>
 
               {media.length > 0 && (
                 <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {media.map((m) => {
                     const isImg = (m.mime || "").startsWith("image/");
-                    const tag = isImg ? `![${m.filename}](${m.url})` : `[${m.filename}](${m.url})`;
+                    const tag = isImg
+                      ? `![${m.filename}](${m.url})`
+                      : `[${m.filename}](${m.url})`;
                     return (
-                      <div key={m.id} className="rounded border border-[#4a5a45] overflow-hidden bg-[#2a3328]">
-                        <div className="bg-[#222] grid place-items-center" style={{ height: 140 }}>
+                      <div
+                        key={m.id}
+                        className="rounded border border-[#4a5a45] overflow-hidden bg-[#2a3328]"
+                      >
+                        <div
+                          className="bg-[#222] grid place-items-center"
+                          style={{ height: 140 }}
+                        >
                           {isImg ? (
-                            <img src={m.url} alt="" style={{ maxHeight: 140, maxWidth: "100%", objectFit: "contain" }} />
+                            <img
+                              data-local-id={m.id}
+                              src={m.url}
+                              onError={(e) => {
+                                // while /local is not ready, show temp preview
+                                if (e.currentTarget.src !== m.previewUrl) {
+                                  e.currentTarget.src = m.previewUrl;
+                                }
+                              }}
+                              alt=""
+                              style={{
+                                maxHeight: 140,
+                                maxWidth: "100%",
+                                objectFit: "contain",
+                              }}
+                            />
                           ) : (
-                            <video src={m.url} style={{ maxHeight: 140, maxWidth: "100%", objectFit: "contain" }} muted autoPlay loop playsInline />
+                            <video
+                              data-local-id={m.id}
+                              src={m.url}
+                              onError={(e) => {
+                                const el = e.currentTarget;
+                                if (el.src !== m.previewUrl) el.src = m.previewUrl;
+                              }}
+                              style={{
+                                maxHeight: 140,
+                                maxWidth: "100%",
+                                objectFit: "contain",
+                              }}
+                              muted
+                              autoPlay
+                              loop
+                              playsInline
+                            />
                           )}
                         </div>
                         <div className="p-2 text-[11px] flex items-center gap-2">
-                          <span className="truncate" title={m.filename}>{m.filename}</span>
+                          <span className="truncate" title={m.filename}>
+                            {m.filename}
+                          </span>
                           <button
                             onClick={() => {
-                              navigator.clipboard?.writeText(tag).catch(()=>{});
+                              navigator.clipboard?.writeText(tag).catch(() => {});
                               insertAtEnd(tag);
                             }}
                             className="ml-auto inline-flex items-center gap-1 rounded border border-[#4a5a45] px-2 py-0.5 hover:border-[var(--primary)]"
@@ -2369,7 +2643,9 @@ function AdminPosts() {
                     {p.date} • {p.published ? "Published" : "Draft"}
                   </div>
                 </div>
-                <div className="text-xs opacity-80 break-all">/blog/{p.slug}</div>
+                <div className="text-xs opacity-80 break-all">
+                  /blog/{p.slug}
+                </div>
                 <div className="mt-2 flex gap-2">
                   <button
                     onClick={() => navigate(`/blog/${p.slug}`)}
@@ -2403,10 +2679,10 @@ function AdminPosts() {
   );
 }
 
-/* ───────────── AdminPortfolio component ───────────── */
+/* ───────────── AdminPortfolio component — fixed previews ───────────── */
 function AdminPortfolio() {
   const [rows, setRows] = useState<PortfolioItem[]>(() => loadPortfolio());
-  const [filter, setFilter] = useState<"all"|"image"|"video">("all");
+  const [filter, setFilter] = useState<"all" | "image" | "video">("all");
 
   useEffect(() => {
     const onChange = (e: any) => {
@@ -2416,43 +2692,88 @@ function AdminPortfolio() {
     return () => window.removeEventListener("kabuto:data", onChange as any);
   }, []);
 
-  useEffect(() => {
-    const onMsg = (e: MessageEvent) => {
-      const { type, payload } = (e.data || {}) as any;
-      if (type === "cache-put-ok" && payload?.id && payload?.bucket === "portfolio") {
-        // confirmation only — URL is deterministic already
-      }
-    };
-    navigator.serviceWorker?.addEventListener("message", onMsg);
-    return () => navigator.serviceWorker?.removeEventListener("message", onMsg);
-  }, []);
+  // When SW confirms a portfolio item is saved, swap previews to /local/*
+ // In AdminPortfolio() – the effect that listens for SW "message"
+useEffect(() => {
+  const onMsg = (e: MessageEvent) => {
+    const { type, payload } = (e.data || {}) as any;
+    if (type === "cache-put-ok" && payload?.id && payload?.bucket === "portfolio") {
+      const url = localUrl("portfolio", payload.id);
+      const imgs = document.querySelectorAll<HTMLImageElement>(
+        `img[data-local-id="${payload.id}"]`,
+      );
+      imgs.forEach((img) => {
+        if (img.src !== url) img.src = url;
+      });
+      const vids = document.querySelectorAll<HTMLVideoElement>(
+        `video[data-local-id="${payload.id}"]`,
+      );
+      vids.forEach((v) => {
+        if (v.src !== url) v.src = url;
+      });
+    }
+  };
+
+  const sw = getActiveSW();
+  if (sw) navigator.serviceWorker!.addEventListener("message", onMsg);
+
+  // ✅ Cleanup must return a function, not a boolean
+  return () => {
+    if (sw) navigator.serviceWorker!.removeEventListener("message", onMsg);
+  };
+}, []);
+
 
   async function addFiles(files: FileList | null) {
     if (!files || !files.length) return;
+
     for (const file of Array.from(files)) {
       const id = uid();
+      const url = localUrl("portfolio", id);
+      const temp = URL.createObjectURL(file); // instant preview
+
+      window.dispatchEvent(
+        new CustomEvent("kabuto:upload-begin", {
+          detail: { id, filename: file.name, bucket: "portfolio" },
+        }),
+      );
+
       const mime = file.type || "";
-      const type: "image" | "video" = mime.startsWith("image/") ? "image" : "video";
+      const type: "image" | "video" = mime.startsWith("image/")
+        ? "image"
+        : "video";
       const row: PortfolioItem = {
         id,
         title: file.name,
         type,
-        url: localUrl("portfolio", id), // set immediately
+        url,
         filename: file.name,
         mime,
         createdAt: Date.now(),
         published: true,
+        previewUrl: temp,
       };
-      const next = [row, ...rows];
-      setRows(next);
-      savePortfolio(next);
 
-      const reg = await navigator.serviceWorker.ready.catch(() => undefined);
-      if (reg?.active) {
-        reg.active.postMessage({ type: "cache-put", payload: { id, blob: file, bucket: "portfolio" } });
-      } else {
-        alert("Service worker not active; cannot store media.");
+      setRows((r) => [row, ...r]);
+      savePortfolio([row, ...rows]);
+
+      try {
+        const reg = await navigator.serviceWorker.ready.catch(() => undefined);
+        const active = reg?.active ?? getActiveSW();
+        if (active) {
+          active.postMessage({
+            type: "cache-put",
+            payload: { id, blob: file, bucket: "portfolio" },
+          });
+        } else {
+          console.warn("Service worker not active; cannot store media yet.");
+        }
+      } catch {
+        console.warn("SW postMessage failed; preview will persist until SW ready.");
       }
+
+      // optional revoke later
+      setTimeout(() => URL.revokeObjectURL(temp), 60_000);
     }
   }
 
@@ -2467,7 +2788,9 @@ function AdminPortfolio() {
     savePortfolio(next);
   }
 
-  const visible = rows.filter((r) => filter === "all" ? true : r.type === filter);
+  const visible = rows.filter((r) =>
+    filter === "all" ? true : r.type === filter,
+  );
 
   return (
     <div className="grid gap-4">
@@ -2475,8 +2798,15 @@ function AdminPortfolio() {
         <form
           onSubmit={(e) => e.preventDefault()}
           className="grid gap-3 text-xs"
-          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); addFiles(e.dataTransfer?.files || null); }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            addFiles(e.dataTransfer?.files || null);
+          }}
         >
           <input
             type="file"
@@ -2485,7 +2815,10 @@ function AdminPortfolio() {
             onChange={(e) => addFiles(e.currentTarget.files)}
             className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1"
           />
-          <div className="opacity-75">Drag & drop or use the picker. Stored under <code>/local/portfolio/&lt;id&gt;</code>.</div>
+          <div className="opacity-75">
+            Drag & drop or use the picker. Stored under{" "}
+            <code>/local/portfolio/&lt;id&gt;</code>.
+          </div>
         </form>
       </Panel>
 
@@ -2508,7 +2841,10 @@ function AdminPortfolio() {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {visible.map((r) => (
-              <div key={r.id} className="rounded-[6px] border border-[#4a5a45] bg-[#3a4538] overflow-hidden">
+              <div
+                key={r.id}
+                className="rounded-[6px] border border-[#4a5a45] bg-[#3a4538] overflow-hidden"
+              >
                 <div className="px-2 py-1 border-b border-[#4a5a45] flex items-center gap-2">
                   <input
                     value={r.title || ""}
@@ -2520,7 +2856,9 @@ function AdminPortfolio() {
                     <input
                       type="checkbox"
                       checked={r.published}
-                      onChange={(e) => updRow(r.id, { published: e.target.checked })}
+                      onChange={(e) =>
+                        updRow(r.id, { published: e.target.checked })
+                      }
                     />
                     Published
                   </label>
@@ -2534,14 +2872,40 @@ function AdminPortfolio() {
                 <div className="bg-[#222] grid place-items-center">
                   {r.type === "image" ? (
                     <img
+                      data-local-id={r.id}
                       src={r.url}
+                      onError={(e) => {
+                        if (r.previewUrl && e.currentTarget.src !== r.previewUrl) {
+                          e.currentTarget.src = r.previewUrl;
+                        } else {
+                          e.currentTarget.style.display = "none";
+                        }
+                      }}
                       alt=""
-                      style={{ height: 180, width: "auto", display: "block", objectFit: "contain" }}
+                      style={{
+                        height: 180,
+                        width: "auto",
+                        display: "block",
+                        objectFit: "contain",
+                      }}
                     />
                   ) : (
                     <video
+                      data-local-id={r.id}
                       src={r.url}
-                      style={{ height: 180, width: "auto", display: "block", objectFit: "contain" }}
+                      onError={(e) => {
+                        if (r.previewUrl && e.currentTarget.src !== r.previewUrl) {
+                          (e.currentTarget as HTMLVideoElement).src = r.previewUrl!;
+                        } else {
+                          (e.currentTarget as HTMLVideoElement).style.display = "none";
+                        }
+                      }}
+                      style={{
+                        height: 180,
+                        width: "auto",
+                        display: "block",
+                        objectFit: "contain",
+                      }}
                       muted
                       loop
                       autoPlay
@@ -2550,7 +2914,7 @@ function AdminPortfolio() {
                   )}
                 </div>
                 <div className="px-2 py-1 text-[10px] opacity-75">
-                  {r.filename || ""} {r.mime ? `• ${r.mime}` : "" }
+                  {r.filename || ""} {r.mime ? `• ${r.mime}` : ""}
                 </div>
               </div>
             ))}
@@ -2565,15 +2929,19 @@ function AdminPortfolio() {
    │ Shell & routing                                                           │
    ╰──────────────────────────────────────────────────────────────────────────╯ */
 export default function KabutoHub90s() {
-
   useEffect(() => {
     injectPreloadLinks(IMAGES as unknown as string[], "image");
     if (VIDEOS.length) injectPreloadLinks(VIDEOS as unknown as string[], "video");
     if (AUDIOS.length) injectPreloadLinks(AUDIOS as unknown as string[], "audio");
 
     queueMicrotask(() => {
-      warmDecode({ images: [...IMAGES], videos: [...VIDEOS], audios: [...AUDIOS] })
-        .catch(() => {/* ignore */});
+      warmDecode({
+        images: [...IMAGES],
+        videos: [...VIDEOS],
+        audios: [...AUDIOS],
+      }).catch(() => {
+        /* ignore */
+      });
     });
   }, []);
 
@@ -2594,6 +2962,9 @@ export default function KabutoHub90s() {
 
   const [splashShowing, setSplashShowing] = useState<boolean>(false);
   const [splashImage, setSplashImage] = useState<string>("");
+
+  // DEV toggles (keep false for prod)
+  const DEV_DISABLE_SPLASH = false;
 
   useCursorTrail(!(transitioning || splashShowing));
 
@@ -2623,7 +2994,7 @@ export default function KabutoHub90s() {
     try {
       clickSfx.current = new Audio("/sfx/click.mp3");
       transSfx.current = new Audio("/sfx/transition.mp3");
-      fireSfx.current  = new Audio(FIRE_SFX_SRC);
+      fireSfx.current = new Audio(FIRE_SFX_SRC);
 
       [clickSfx.current, transSfx.current, fireSfx.current].forEach((a) => {
         if (!a) return;
@@ -2634,8 +3005,15 @@ export default function KabutoHub90s() {
       const unlock = () => {
         [clickSfx.current, transSfx.current, fireSfx.current].forEach((a) => {
           if (!a) return;
-          a.muted = true; a.currentTime = 0;
-          a.play().then(() => { a.pause(); a.muted = false; }).catch(()=>{});
+          a.muted = true;
+          a.currentTime = 0;
+          a
+            .play()
+            .then(() => {
+              a.pause();
+              a.muted = false;
+            })
+            .catch(() => {});
         });
         window.removeEventListener("pointerdown", unlock);
       };
@@ -2643,11 +3021,17 @@ export default function KabutoHub90s() {
     } catch {}
   }, []);
 
+  // Navigation pre-handler (resilient)
   useEffect(() => {
     const onPre = async (e: any) => {
       const nextPath: string = e.detail?.nextPath || "/";
 
-      try { clickSfx.current && ((clickSfx.current.currentTime = 0), clickSfx.current.play()); } catch {}
+      try {
+        if (clickSfx.current) {
+          clickSfx.current.currentTime = 0;
+          clickSfx.current.play().catch(() => {});
+        }
+      } catch {}
 
       addHtmlLock();
       setTransitioning(true);
@@ -2658,17 +3042,21 @@ export default function KabutoHub90s() {
       const needsSplash = isDesktopRoute(nextPath);
       const splashImg = nextPath === "/" ? (ROOT_SPLASH || PF_SPLASH) : PF_SPLASH;
 
+      // Switch route first so React view updates
       window.history.pushState({}, "", nextPath);
       window.dispatchEvent(new PopStateEvent("popstate"));
 
-      if (needsSplash) {
+      if (!DEV_DISABLE_SPLASH && needsSplash) {
         setSplashImage(splashImg);
         setSplashShowing(true);
         try {
-          transSfx.current && ((transSfx.current.currentTime = 0), transSfx.current.play());
+          if (transSfx.current) {
+            transSfx.current.currentTime = 0;
+            transSfx.current.play().catch(() => {});
+          }
         } catch {}
-
-        setTimeout(() => setTransitioning(false), 250);
+        // splash owns the transition
+        setTimeout(() => setTransitioning(false), 200);
       } else {
         const entered = new Promise<void>((resolve) => {
           const handler = () => {
@@ -2676,7 +3064,7 @@ export default function KabutoHub90s() {
             resolve();
           };
           window.addEventListener("kabuto:page-entered", handler as any, { once: true });
-          setTimeout(resolve, 1200);
+          setTimeout(resolve, 1000);
         });
 
         await entered;
@@ -2689,25 +3077,47 @@ export default function KabutoHub90s() {
     return () => window.removeEventListener("kabuto:pre-navigate", onPre);
   }, []);
 
+  // First paint splash for desktop routes
   useEffect(() => {
     if (path === "/" || path === "/portfolio") {
       addHtmlLock();
       setTransitioning(true);
-      setSplashImage(path === "/" ? (ROOT_SPLASH || PF_SPLASH) : PF_SPLASH);
-
-      setTimeout(() => {
-        setSplashShowing(true);
-        try { if (transSfx.current) { transSfx.current.currentTime = 0; transSfx.current.play(); } } catch {}
-        setTimeout(() => setTransitioning(false), 250);
-      }, 200);
+      if (!DEV_DISABLE_SPLASH) {
+        setSplashImage(path === "/" ? (ROOT_SPLASH || PF_SPLASH) : PF_SPLASH);
+        setTimeout(() => {
+          setSplashShowing(true);
+          try {
+            if (transSfx.current) {
+              transSfx.current.currentTime = 0;
+              transSfx.current.play().catch(() => {});
+            }
+          } catch {}
+          setTimeout(() => setTransitioning(false), 250);
+        }, 200);
+      } else {
+        setTransitioning(false);
+        removeHtmlLock();
+      }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Splash lock toggling
   useEffect(() => {
     if (splashShowing) addHtmlLock();
     else removeHtmlLock();
     return () => removeHtmlLock();
+  }, [splashShowing]);
+
+  // Failsafe: never keep splash forever (handles asset 404s / silent errors)
+  useEffect(() => {
+    if (!splashShowing) return;
+    const id = setTimeout(() => {
+      setSplashShowing(false);
+      removeHtmlLock();
+      setTransitioning(false);
+    }, 4000);
+    return () => clearTimeout(id);
   }, [splashShowing]);
 
   useEffect(() => {
@@ -2727,19 +3137,8 @@ export default function KabutoHub90s() {
     link.href = FAVICON_SRC;
   }, [path]);
 
-  const [navH, setNavH] = useState(48);
-  const navRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!navRef.current) return;
-    const r = () => setNavH(navRef.current!.offsetHeight || 48);
-    r();
-    const ro = new ResizeObserver(r);
-    ro.observe(navRef.current!);
-    return () => ro.disconnect();
-  }, []);
-
   const global = (
-  <style>{`
+    <style>{`
     :root { --cs-cursor: url("${CURSOR_URL}") 16 16, crosshair; --taskbar-h: 40px; }
     html, body { margin: 0; background: var(--bg); color: var(--primarySoft); }
     html.splash-lock, html.splash-lock body { background:#000 !important; overflow:hidden !important; }
@@ -2760,9 +3159,7 @@ export default function KabutoHub90s() {
   else if (path === "/lab") view = <LabHomePage />;
   else if (path === "/blog") view = <BlogPage />;
   else if (path.startsWith("/blog/"))
-    view = (
-      <BlogPostPage slug={decodeURIComponent(path.replace("/blog/", ""))} />
-    );
+    view = <BlogPostPage slug={decodeURIComponent(path.replace("/blog/", ""))} />;
   else if (path === "/esports") view = <EsportsPage />;
   else if (path === "/commissions") view = <CommissionsPage />;
   else if (path === "/portfolio") view = <PortfolioPage />;
@@ -2794,10 +3191,7 @@ export default function KabutoHub90s() {
       {global}
 
       {!(path === "/" || path === "/portfolio") && (
-        <div
-          ref={navRef}
-          className="sticky top-0 z-40 border-b border-[#4a5a45] bg-[#3a4538]/90 backdrop-blur"
-        >
+        <div>
           <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-3">
             {path !== homeTarget && (
               <button
@@ -2822,9 +3216,21 @@ export default function KabutoHub90s() {
 
             <div className="ml-auto flex items-center gap-2">
               {[
-                { name: "YouTube", url: "https://www.youtube.com/@kabutoKunai", icon: Youtube },
-                { name: "TikTok", url: "https://www.tiktok.com/@kabutokunai/", icon: Link2 },
-                { name: "X / Twitter", url: "https://x.com/kabutoKunai", icon: Twitter },
+                {
+                  name: "YouTube",
+                  url: "https://www.youtube.com/@kabutoKunai",
+                  icon: Youtube,
+                },
+                {
+                  name: "TikTok",
+                  url: "https://www.tiktok.com/@kabutokunai/",
+                  icon: Link2,
+                },
+                {
+                  name: "X / Twitter",
+                  url: "https://x.com/kabutoKunai",
+                  icon: Twitter,
+                },
                 { name: "GitHub", url: "https://github.com/kabuto-mk7", icon: Github },
                 { name: "Contact", url: "mailto:contact@kabuto.studio", icon: Mail },
               ].map((s) => {
@@ -2895,18 +3301,23 @@ export default function KabutoHub90s() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.45 }}
+            transition={{ duration: 0.35 }}
             onAnimationComplete={() => {
+              // auto-clear shortly after showing
               window.setTimeout(() => {
                 setSplashShowing(false);
                 removeHtmlLock();
-              }, 1400);
+              }, 1000);
             }}
           >
             <img
               src={splashImage}
               alt="splash"
               className="max-w-[70vw] w-[680px] h-auto object-contain"
+              onError={() => {
+                setSplashShowing(false);
+                removeHtmlLock();
+              }}
             />
           </motion.div>
         )}
@@ -2933,7 +3344,8 @@ export default function KabutoHub90s() {
             backgroundImage: `url("${CURSOR_URL}")`,
             backgroundRepeat: "no-repeat",
             backgroundSize: "contain",
-            filter: "drop-shadow(0 0 6px rgba(0,0,0,0.8)) drop-shadow(0 0 6px rgba(0,255,0,0.35))",
+            filter:
+              "drop-shadow(0 0 6px rgba(0,0,0,0.8)) drop-shadow(0 0 6px rgba(0,255,0,0.35))",
             zIndex: 2147483647,
             opacity: 0,
             transform: "translate(-50%, -50%)",
