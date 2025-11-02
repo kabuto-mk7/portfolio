@@ -8,14 +8,13 @@ import { EsportsPage } from "@/pages/EsportsPage";
 import { CommissionsPage } from "@/pages/CommissionsPage";
 import { PortfolioPage } from "@/pages/PortfolioPage";
 import { AdminPage } from "@/pages/AdminPage";
-import { ClassicTaskbar } from "@/ui/Taskbar";
-
 
 import { usePath, isInternalKabuto, navigate } from "@/lib/router";
 import { usePreloadImages } from "@/hooks/usePreloadImages";
 import { BRAND, LOGO_SRC, FAVICON_SRC, CURSOR_URL, PF_VIEWMODEL, PF_START, PF_PCICON, PF_SPLASH, ROOT_SPLASH,
   FEATURE_IMAGE_PRIMARY, SMOKER_SRC, ROOT_WALL, ICON_PORTFOLIO, ICON_LAB, ICON_IRL, ICON_CONTACT,
-  RIGHT_STACK_IMAGES, RATES_THUMBS, SFX_CLICK, SFX_TRANSITION, SFX_FIRE } from "@/lib/assets";
+  RIGHT_STACK_IMAGES, RATES_THUMBS, SFX_CLICK, SFX_TRANSITION, SFX_FIRE, PORTFOLIO_SAMPLES } from "@/lib/assets";
+import { IMAGES } from "@/assets.manifest";
 import React, { type JSX } from "react";
 
 export default function KabutoHub90s() {
@@ -40,11 +39,18 @@ export default function KabutoHub90s() {
   // cursor trail
   useCursorTrail(!(transitioning || splashShowing));
 
-  // preload global assets
+  // preload global assets – include all static assets and portfolio samples so there are no pop‑in image loads across the site
   usePreloadImages([
+    // core UI assets
     LOGO_SRC, FAVICON_SRC, FEATURE_IMAGE_PRIMARY, SMOKER_SRC, ROOT_WALL,
     ICON_PORTFOLIO, ICON_LAB, ICON_IRL, ICON_CONTACT, PF_VIEWMODEL, PF_START, PF_PCICON,
-    PF_SPLASH, ROOT_SPLASH, ...RIGHT_STACK_IMAGES, ...RATES_THUMBS,
+    PF_SPLASH, ROOT_SPLASH,
+    // additional right sidebar and rates thumbnails
+    ...RIGHT_STACK_IMAGES, ...RATES_THUMBS,
+    // all images declared in the asset manifest (public assets)
+    ...IMAGES,
+    // remote portfolio sample images (filter to images only)
+    ...PORTFOLIO_SAMPLES.filter((x) => x.type === "image").map((x) => x.src),
   ]);
 
   // sfx init/unlock
@@ -84,9 +90,11 @@ export default function KabutoHub90s() {
         if (needsSplash) {
           setSplashImage(splashImg); setSplashShowing(true);
           try { transSfx.current && ((transSfx.current.currentTime = 0), transSfx.current.play()); } catch {}
-          window.setTimeout(()=> setTransitioning(false), 250);
+          // extend the transition period to allow the splash to fully cover the view
+          window.setTimeout(()=> setTransitioning(false), 500);
         } else {
-          window.setTimeout(() => { setTransitioning(false); removeHtmlLock(); }, 350);
+          // give non-splash transitions a bit more time as well
+          window.setTimeout(() => { setTransitioning(false); removeHtmlLock(); }, 500);
         }
       }, 120);
     };
@@ -102,7 +110,8 @@ export default function KabutoHub90s() {
       setTimeout(() => {
         setSplashShowing(true);
         try { if (transSfx.current) { transSfx.current.currentTime = 0; transSfx.current.play(); } } catch {}
-        setTimeout(()=> setTransitioning(false), 250);
+        // allow more time for the splash screen and animation to complete
+        setTimeout(()=> setTransitioning(false), 500);
       }, 200);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -164,12 +173,12 @@ export default function KabutoHub90s() {
   const homeTarget = (path === "/lab" || path.startsWith("/blog") || path === "/esports" || path === "/commissions" || path === "/admin") ? "/lab" : "/";
 
   return (
-    <div className={"min-h-screen text-[var(--primarySoft)] bg-[var(--bg)] subpixel-antialiased" + (path === "/" || path === "/portfolio" ? " overflow-hidden" : "")}>
+    <div className={"min-h-screen text-[var(--primarySoft)] bg-[var(--bg)] subpixel-antialiased" + (path === "/" || path === "/portfolio" ? " overflow-hidden" : "")}> 
       {global}
 
       {/* top bar – hidden on desktops */}
       {!(path === "/" || path === "/portfolio") && (
-        <div ref={navRef} className="fixed top-0 left-0 right-0 z-40 border-b border-[#4a5a45] bg-[#3a4538]/90 backdrop-blur">
+        <div ref={navRef} className="sticky top-0 z-40 border-b border-[#4a5a45] bg-[#3a4538]/90 backdrop-blur">
           <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-3">
             {path !== homeTarget && (
               <button onClick={()=>navigate(homeTarget)} className="rounded-[4px] border border-[#4a5a45] bg-[#3a4538] px-2 py-1 text-xs hover:border-[var(--primary)] hover:bg-[#404b3f] transition-colors">Home</button>
@@ -198,7 +207,6 @@ export default function KabutoHub90s() {
               })}
             </div>
           </div>
-          
         </div>
       )}
 
@@ -233,10 +241,6 @@ export default function KabutoHub90s() {
         )}
       </AnimatePresence>
 
-      {!(transitioning || splashShowing) && (
-      <ClassicTaskbar onStart={() => navigate("/")} />
-      )}
-
       {/* cursor trail */}
       {Array.from({ length: 10 }).map((_, i) => (
         <span key={i} id={`ktrail-${i}`} className="pointer-events-none fixed"
@@ -244,7 +248,6 @@ export default function KabutoHub90s() {
                    filter:"drop-shadow(0 0 6px rgba(0,0,0,0.8)) drop-shadow(0 0 6px rgba(0,255,0,0.35))", zIndex:2147483647, opacity:0, transform:"translate(-50%, -50%)" }}/>
       ))}
     </div>
-
   );
 }
 
