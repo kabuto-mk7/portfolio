@@ -1,4 +1,3 @@
-import { ClassicTaskbar } from "@/ui/Taskbar";
 import { NotepadWindow } from "@/components/windows/NotepadWindow";
 import { navigate } from "@/lib/router";
 import { usePreloadImages } from "@/hooks/usePreloadImages";
@@ -41,8 +40,6 @@ export function RootDesktopPage() {
         </div>
         <img src={`${COUNTER_SRC}&t=${cacheBust}`} alt="site hit counter" className="h-20" loading="eager"/>
       </div>
-
-      <ClassicTaskbar onStart={() => navigate("/lab")} />
       {contactOpen && <NotepadWindow onClose={()=>setContactOpen(false)} />}
     </div>
   );

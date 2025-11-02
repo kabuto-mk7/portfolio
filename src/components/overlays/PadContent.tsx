@@ -1,5 +1,8 @@
 import { RATES_THUMBS, PORTFOLIO_SAMPLES } from "@/lib/assets";
 import React from "react";
+import tape from "/assets/kabuto/ui/tape.png";
+import sticky from "/assets/kabuto/ui/sticky.png";
+import cracked from "/assets/kabuto/ui/cracked.jpg";
 
 export function PortfolioPadContent() {
   const items = PORTFOLIO_SAMPLES.map(x => x.type === "image" ? { type:"img" as const, src:x.src } : { type:"video" as const, src:x.src });
@@ -78,16 +81,82 @@ export function RatesPadContent() {
 
 export function ContactPadContent() {
   return (
-    <div className="w-full h-full relative text-white/90 text-[14px]">
-      <div className="p-4 pr-[180px] pb-[180px] md:pr-[220px] md:pb-[220px]">
-        <div className="space-y-2">
-          <div>contact – <a className="underline" href="mailto:contact@kabuto.studio">contact@kabuto.studio</a></div>
-          <div>discord: kabuto.</div>
-          <div>IG – <a className="underline" href="https://instagram.com/kbt2k" target="_blank" rel="noreferrer">kbt2k</a></div>
+    // The cracked background is applied to the entire contact pad container
+    <div
+      className="w-full h-full relative"
+      style={{
+        backgroundImage: `url(${cracked})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }}
+    >
+      {/* Sticky note anchored at top‑left */}
+      <div
+        className="absolute top-6 left-[-15] z-10"
+        style={{ width: "clamp(200px, 45vw, 340px)" }}
+      >
+        <img
+          src={sticky}
+          alt="sticky note"
+          className="w-full h-auto pointer-events-none select-none drop-shadow-[0_4px_8px_rgba(0,0,0,0.35)]"
+        />
+        {/* Contact info on the sticky note; adjust padding and colors for legibility */}
+        <div
+          className="absolute inset-0 px-6 py-40 text-[14px] leading-relaxed text-black"
+          style={{
+            color: "#222", // darken the text for legibility
+            textShadow: "0 0px 15px rgba(0, 0, 0, 1)", // heavy halo behind text for contrast
+          }}
+        >
+          <div className="space-y-2">
+            <div>
+              <a
+                className="underline text-blue-600"
+                href="mailto:contact@kabuto.studio"
+              >
+                contact@kabuto.studio
+              </a>
+            </div>
+            <div>discord: kabuto.</div>
+            <div>
+              IG —{" "}
+              <a
+                href="https://instagram.com/kbt2k"
+                target="_blank"
+                rel="noreferrer"
+                className="underline text-blue-600"
+                style={{ color: "#1e40af" }}  // tailwind’s blue-700 value
+              >
+                kbt2k
+              </a>
+            </div>
+          </div>
         </div>
       </div>
-      <img src="/assets/kabuto/portfolio/self.png" alt="profile" loading="lazy" decoding="async"
-           className="absolute bottom-3 right-3 w-[160px] h-[160px] md:w-[200px] md:h-[200px] rounded-[10px] object-cover border border-white/25 shadow-[0_8px_26px_rgba(0,0,0,.55)] bg-black/20"/>
+
+      {/* Photo anchored at bottom‑right with duct‑tape on top */}
+      <div
+        className="absolute bottom-6 right-6"
+        style={{ width: "clamp(160px, 40vw, 280px)" }}
+      >
+        <img
+          src="/assets/kabuto/portfolio/self.png"
+          alt="profile"
+          loading="lazy"
+          decoding="async"
+          className="w-full h-full rounded-[10px] object-cover border border-white/25 shadow-[0_8px_26px_rgba(0,0,0,.55)] bg-black/20"
+        />
+        {/* Tape overlaps the top of the photo; drop‑shadow adds depth without a square outline */}
+        <img
+          src={tape}
+          alt=""
+          className="absolute -top-20 left-1/2 transform -translate-x-1/2 rotate-[-10deg] pointer-events-none select-none"
+          style={{
+            width: "70%",
+            filter: "drop-shadow(0 4px 6px rgba(0,0,0,0.5))",
+          }}
+        />
+      </div>
     </div>
   );
 }

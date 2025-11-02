@@ -1,0 +1,87 @@
+diff --git a/src/components/Taskbar.tsx b/src/components/Taskbar.tsx
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/src/components/Taskbar.tsx
+@@ -0,0 +1,66 @@
++import React from "react";
++import { useLocation, Link } from "react-router-dom";
++import { Menu, FolderOpen, BookOpen } from "lucide-react";
++import { motion } from "framer-motion";
++
++type Props = { onStart?: () => void; hidden?: boolean };
++
++const Taskbar: React.FC<Props> = ({ onStart, hidden }) => {
++  const loc = useLocation();
++  const isActive = (p: string) => loc.pathname.startsWith(p);
++  return (
++    <motion.div
++      aria-label="taskbar"
++      initial={false}
++      animate={{ y: hidden ? 80 : 0, opacity: hidden ? 0 : 1 }}
++      transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
++      className="fixed left-0 right-0 bottom-0 z-[1000] h-12 bg-[#c0c0c0] border-t border-black/40 shadow-[0_-1px_0_#fff_inset,0_1px_0_#000_inset] flex items-center px-2 gap-2 select-none"
++      style={{ pointerEvents: hidden ? "none" : "auto" }}
++    >
++      <button
++        onClick={onStart}
++        className="px-3 h-8 inline-flex items-center gap-2 bg-[#e0e0e0] border border-black/40 shadow-[inset_0_1px_0_#fff,0_1px_0_#000]"
++      >
++        <Menu size={16} />
++        <span className="text-sm">Start</span>
++      </button>
++      <Link
++        to="/portfolio"
++        className={`px-3 h-8 inline-flex items-center gap-2 border border-black/40 shadow-[inset_0_1px_0_#fff,0_1px_0_#000] ${isActive("/portfolio") ? "bg-white" : "bg-[#e0e0e0] hover:bg-white"}`}
++      >
++        <FolderOpen size={16} />
++        <span className="text-sm">Portfolio</span>
++      </Link>
++      <Link
++        to="/blog"
++        className={`px-3 h-8 inline-flex items-center gap-2 border border-black/40 shadow-[inset_0_1px_0_#fff,0_1px_0_#000] ${isActive("/blog") ? "bg-white" : "bg-[#e0e0e0] hover:bg-white"}`}
++      >
++        <BookOpen size={16} />
++        <span className="text-sm">Blog</span>
++      </Link>
++      <div className="ml-auto text-xs text-black/70 pr-2">
++        {new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
++      </div>
++    </motion.div>
++  );
++};
++
++export default Taskbar;
+diff --git a/src/App.tsx b/src/App.tsx
+index 1111111..2222222 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,6 +1,8 @@
+-import React from "react";
++import React, { useState } from "react";
+ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+ import { AnimatePresence, motion } from "framer-motion";
++import Taskbar from "./components/Taskbar";
++// (We’ll add proper transitions + hidden prop in the full patch)
+ 
+ import Home from "./pages/Home";
+ import Portfolio from "./pages/Portfolio";
+@@
+ const AppShell: React.FC = () => {
+   const location = useLocation();
++  const [isTransitioning] = useState(false);
+   return (
+     <AnimatePresence mode="wait">
+       <motion.main
+@@
+         <Routes location={location} key={location.key}>
+           <Route path="/" element={<Home />} />
+           <Route path="/portfolio" element={<Portfolio />} />
+           <Route path="/lab/*" element={<Lab />} />
+           <Route path="/blog" element={<Blog />} />
+         </Routes>
+       </motion.main>
++      <Taskbar onStart={() => (window.location.href = "/")} hidden={isTransitioning} />
+     </AnimatePresence>
+   );
+ };

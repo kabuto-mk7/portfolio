@@ -102,8 +102,6 @@ export function PortfolioPage(): JSX.Element {
           onClose={()=>setPfWinOpen(false)}
         />
       )}
-
-      <ClassicTaskbar onStart={() => navigate("/lab")} />
     </div>
   );
 }

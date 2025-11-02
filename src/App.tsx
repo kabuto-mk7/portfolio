@@ -8,6 +8,8 @@ import { EsportsPage } from "@/pages/EsportsPage";
 import { CommissionsPage } from "@/pages/CommissionsPage";
 import { PortfolioPage } from "@/pages/PortfolioPage";
 import { AdminPage } from "@/pages/AdminPage";
+import { ClassicTaskbar } from "@/ui/Taskbar";
+
 
 import { usePath, isInternalKabuto, navigate } from "@/lib/router";
 import { usePreloadImages } from "@/hooks/usePreloadImages";
@@ -167,7 +169,7 @@ export default function KabutoHub90s() {
 
       {/* top bar – hidden on desktops */}
       {!(path === "/" || path === "/portfolio") && (
-        <div ref={navRef} className="sticky top-0 z-40 border-b border-[#4a5a45] bg-[#3a4538]/90 backdrop-blur">
+        <div ref={navRef} className="fixed top-0 left-0 right-0 z-40 border-b border-[#4a5a45] bg-[#3a4538]/90 backdrop-blur">
           <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-3">
             {path !== homeTarget && (
               <button onClick={()=>navigate(homeTarget)} className="rounded-[4px] border border-[#4a5a45] bg-[#3a4538] px-2 py-1 text-xs hover:border-[var(--primary)] hover:bg-[#404b3f] transition-colors">Home</button>
@@ -196,6 +198,7 @@ export default function KabutoHub90s() {
               })}
             </div>
           </div>
+          
         </div>
       )}
 
@@ -230,6 +233,10 @@ export default function KabutoHub90s() {
         )}
       </AnimatePresence>
 
+      {!(transitioning || splashShowing) && (
+      <ClassicTaskbar onStart={() => navigate("/")} />
+      )}
+
       {/* cursor trail */}
       {Array.from({ length: 10 }).map((_, i) => (
         <span key={i} id={`ktrail-${i}`} className="pointer-events-none fixed"
@@ -237,6 +244,7 @@ export default function KabutoHub90s() {
                    filter:"drop-shadow(0 0 6px rgba(0,0,0,0.8)) drop-shadow(0 0 6px rgba(0,255,0,0.35))", zIndex:2147483647, opacity:0, transform:"translate(-50%, -50%)" }}/>
       ))}
     </div>
+
   );
 }
 

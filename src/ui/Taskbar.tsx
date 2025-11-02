@@ -1,5 +1,8 @@
 import { PF_START } from "@/lib/assets";
 import React from "react";
+import { ICON_PORTFOLIO, ICON_LAB } from "@/lib/assets";
+import { navigate } from "@/lib/router";
+
 
 export function ClassicTaskbar({ onStart }: { onStart: () => void }) {
   const [time, setTime] = React.useState(() =>
@@ -16,16 +19,50 @@ export function ClassicTaskbar({ onStart }: { onStart: () => void }) {
   const bevelDown: React.CSSProperties = { borderTop: "1px solid #808080", borderLeft: "1px solid #808080", borderRight: "1px solid #fff", borderBottom: "1px solid #fff" };
 
   return (
-    <div className="absolute left-0 right-0 bottom-0 h-10 flex items-center px-2"
-         style={{ background:"#c0c0c0", ...bevelDown, boxShadow:"inset 0 1px 0 #dfdfdf, inset 0 -1px 0 #808080", zIndex:100 }}>
-      <button onClick={onStart} className="h-7 px-3 flex items-center gap-2 text-black"
-              style={{ background:"#c0c0c0", ...bevelUp, boxShadow:"inset -1px -1px #808080, inset 1px 1px #ffffff" }} title="Start">
+  <div
+    className="fixed left-0 right-0 bottom-0 h-10 flex items-center px-2"
+    style={{ background: "#c0c0c0", ...bevelDown, boxShadow: "inset 0 1px 0 #dfdfdf, inset 0 -1px 0 #808080", zIndex: 100 }}
+  >
+    <div className="flex items-center gap-1">
+      <button
+        onClick={onStart}
+        className="h-7 px-3 flex items-center gap-2 text-black"
+        style={{ background: "#c0c0c0", ...bevelUp, boxShadow: "inset -1px -1px #808080, inset 1px 1px #ffffff" }}
+        title="Home"
+      >
         <img src={PF_START} className="h-4 w-4" alt="" />
-        <span className="text-[12px] font-bold tracking-wide">kabuto</span>
+        <span className="text-[12px] font-bold tracking-wide">Home</span>
       </button>
-      <div className="ml-auto text-[12px] bg-white/70 px-2 py-1 border border-[#7b7b7b] min-w-[64px] text-right" style={{ color:"#000" }}>
-        {time}
-      </div>
+      {/* Portfolio button */}
+      {/* Portfolio button */}
+      <button
+        onClick={() => navigate("/portfolio")}
+        className="h-7 px-3 flex items-center gap-2 text-black"
+        style={{ background: "#c0c0c0", ...bevelUp, boxShadow: "inset -1px -1px #808080, inset 1px 1px #ffffff" }}
+        title="Portfolio"
+      >
+        <span className="text-[12px] font-bold tracking-wide">Portfolio</span>
+      </button>
+
+      {/* Blog button (goes to lab) */}
+      <button
+        onClick={() => navigate("/lab")}
+        className="h-7 px-3 flex items-center gap-2 text-black"
+        style={{ background: "#c0c0c0", ...bevelUp, boxShadow: "inset -1px -1px #808080, inset 1px 1px #ffffff" }}
+        title="Lab"
+      >
+        <span className="text-[12px] font-bold tracking-wide">Blog</span>
+      </button>
+
     </div>
-  );
+    {/* Clock remains pushed to the right */}
+    <div
+      className="ml-auto text-[12px] bg-white/70 px-2 py-1 border border-[#7b7b7b] min-w-[64px] text-right"
+      style={{ color: "#000" }}
+    >
+      {time}
+    </div>
+  </div>
+);
+
 }
