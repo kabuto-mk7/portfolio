@@ -13,6 +13,7 @@ import { createPost, listPostsAdmin, deletePost } from "@/lib/storage";
 
 import { supabase } from "@/lib/supabase";
 import { Plus, Save, Trash2, PencilLine, X } from "lucide-react";
+import { img } from "framer-motion/client";
 
 /* =========================
    Admin Page (auth)
@@ -87,7 +88,6 @@ export function AdminPage() {
             Portfolio
           </button>
         </div>
-
         {mode === "events" ? <AdminEvents /> : mode === "posts" ? <AdminPosts /> : <AdminPortfolio />}
       </Window>
     </main>
@@ -107,7 +107,10 @@ function AdminEvents() {
     published: true,
   });
 
-  function saveAll(next: EventRow[]) { setRows(next); saveEvents(next); }
+  function saveAll(next: EventRow[]) {
+    setRows(next);
+    saveEvents(next);
+  }
   function addRow() {
     if (!draft.game || !draft.date) return alert("Game and date required");
     const row: EventRow = { ...draft, id: (crypto as any).randomUUID?.() ?? String(Date.now()) };
@@ -115,8 +118,12 @@ function AdminEvents() {
     setDraft({ id: "", game: "", date: "", location: "", event: "", placement: "", published: true });
     saveAll(next);
   }
-  function delRow(id: string) { saveAll(rows.filter((r) => r.id !== id)); }
-  function updRow(id: string, patch: Partial<EventRow>) { saveAll(rows.map((r) => (r.id === id ? { ...r, ...patch } : r))); }
+  function delRow(id: string) {
+    saveAll(rows.filter((r) => r.id !== id));
+  }
+  function updRow(id: string, patch: Partial<EventRow>) {
+    saveAll(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  }
 
   return (
     <div className="grid gap-4">
@@ -127,7 +134,10 @@ function AdminEvents() {
           <input placeholder="Location" value={draft.location} onChange={(e) => setDraft({ ...draft, location: e.target.value })} className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1" />
           <input placeholder="Event" value={draft.event} onChange={(e) => setDraft({ ...draft, event: e.target.value })} className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1" />
           <input placeholder="Placement (e.g., 12/128 or 1st)" value={draft.placement} onChange={(e) => setDraft({ ...draft, placement: e.target.value })} className="rounded border border-[#4a5a45] bg-[#313b2f] px-2 py-1" />
-          <label className="inline-flex items-center gap-2 px-1"><input type="checkbox" checked={draft.published} onChange={(e) => setDraft({ ...draft, published: e.target.checked })} /><span>Published</span></label>
+          <label className="inline-flex items-center gap-2 px-1">
+            <input type="checkbox" checked={draft.published} onChange={(e) => setDraft({ ...draft, published: e.target.checked })} />
+            <span>Published</span>
+          </label>
         </div>
         <div className="mt-2">
           <button onClick={addRow} className="inline-flex items-center gap-2 rounded border border-[#4a5a45] bg-[#3a4538] px-3 py-1 text-sm hover:border-[var(--primary)]">
@@ -154,26 +164,39 @@ function AdminEvents() {
                 </tr>
               </thead>
               <tbody>
-                {rows.slice().sort((a,b)=> (new Date(b.date).getTime()||0) - (new Date(a.date).getTime()||0)).map((r) => (
-                  <tr key={r.id} className="border-t border-[#2a3328]">
-                    <td className="px-2 py-2"><input value={r.game}      onChange={(e) => updRow(r.id, { game: e.target.value })} className="w-full bg-transparent outline-none" /></td>
-                    <td className="px-2 py-2"><input value={r.date}      onChange={(e) => updRow(r.id, { date: e.target.value })} className="w-full bg-transparent outline-none" /></td>
-                    <td className="px-2 py-2"><input value={r.location}  onChange={(e) => updRow(r.id, { location: e.target.value })} className="w-full bg-transparent outline-none" /></td>
-                    <td className="px-2 py-2"><input value={r.event}     onChange={(e) => updRow(r.id, { event: e.target.value })} className="w-full bg-transparent outline-none" /></td>
-                    <td className="px-2 py-2"><input value={r.placement} onChange={(e) => updRow(r.id, { placement: e.target.value })} className="w-full bg-transparent outline-none" /></td>
-                    <td className="px-2 py-2">
-                      <label className="inline-flex items-center gap-2">
-                        <input type="checkbox" checked={r.published} onChange={(e) => updRow(r.id, { published: e.target.checked })} />
-                        <span className="opacity-70">{r.published ? "Yes" : "No"}</span>
-                      </label>
-                    </td>
-                    <td className="px-2 py-2">
-                      <button onClick={() => delRow(r.id)} className="inline-flex items-center gap-1 rounded border border-[#4a5a45] px-2 py-1 hover:border-red-400">
-                        <Trash2 className="h-4 w-4" /> Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {rows
+                  .slice()
+                  .sort((a, b) => (new Date(b.date).getTime() || 0) - (new Date(a.date).getTime() || 0))
+                  .map((r) => (
+                    <tr key={r.id} className="border-t border-[#2a3328]">
+                      <td className="px-2 py-2">
+                        <input value={r.game} onChange={(e) => updRow(r.id, { game: e.target.value })} className="w-full bg-transparent outline-none" />
+                      </td>
+                      <td className="px-2 py-2">
+                        <input value={r.date} onChange={(e) => updRow(r.id, { date: e.target.value })} className="w-full bg-transparent outline-none" />
+                      </td>
+                      <td className="px-2 py-2">
+                        <input value={r.location} onChange={(e) => updRow(r.id, { location: e.target.value })} className="w-full bg-transparent outline-none" />
+                      </td>
+                      <td className="px-2 py-2">
+                        <input value={r.event} onChange={(e) => updRow(r.id, { event: e.target.value })} className="w-full bg-transparent outline-none" />
+                      </td>
+                      <td className="px-2 py-2">
+                        <input value={r.placement} onChange={(e) => updRow(r.id, { placement: e.target.value })} className="w-full bg-transparent outline-none" />
+                      </td>
+                      <td className="px-2 py-2">
+                        <label className="inline-flex items-center gap-2">
+                          <input type="checkbox" checked={r.published} onChange={(e) => updRow(r.id, { published: e.target.checked })} />
+                          <span className="opacity-70">{r.published ? "Yes" : "No"}</span>
+                        </label>
+                      </td>
+                      <td className="px-2 py-2">
+                        <button onClick={() => delRow(r.id)} className="inline-flex items-center gap-1 rounded border border-[#4a5a45] px-2 py-1 hover:border-red-400">
+                          <Trash2 className="h-4 w-4" /> Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
@@ -189,21 +212,51 @@ function AdminPosts() {
   const [rows, setRows] = React.useState<any[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [files, setFiles] = React.useState<File[]>([]);
-  const [draft, setDraft] = React.useState({
-    slug: "",
-    title: "",
-    summary: "",
-    content: "",
-    published: false,
-  });
+  const [draft, setDraft] = React.useState({ slug: "", title: "", summary: "", content: "", published: false });
 
+  // Helper to convert BlogPostRow objects returned from Supabase into the
+  // Post shape expected by our localStorage helpers. BlogPostRow uses
+  // `updated_at` (snake_case) and stores attachments as BlogAttachment[],
+  // whereas Post uses `updatedAt` (camelCase) and MediaItem[]. We also
+  // coerce attachments to a sane default and parse the updated_at string
+  // into a numeric timestamp.
+  function syncToLocal(rawRows: any[]) {
+    const posts: Post[] = rawRows.map((r) => {
+      const { updated_at, attachments, ...rest } = r;
+      // Convert snake_case updated_at string to numeric updatedAt.
+      const updatedAt = updated_at ? new Date(updated_at).getTime() : Date.now();
+      // Ensure attachments array exists. BlogAttachment matches MediaItem except for the
+      // optional `name` property, which Post doesn't care about.
+      const atts = Array.isArray(attachments) ? attachments.map((a: any) => ({
+        id: a.id,
+        src: a.src,
+        type: a.type,
+      })) : [];
+      return { ...rest, updatedAt, attachments: atts, published: r.published } as Post;
+    });
+    savePosts(posts);
+  }
+
+  // Load posts from Supabase on mount. Also sync them to localStorage so the public blog pages can read them.
   React.useEffect(() => {
-    listPostsAdmin().then(setRows).catch(console.error);
+    listPostsAdmin()
+      .then((rows) => {
+        setRows(rows);
+        // Convert the raw rows to Posts and write them into localStorage.
+        syncToLocal(rows);
+      })
+      .catch(console.error);
   }, []);
 
   function genSlug(title: string) {
-    const base = title.toLowerCase().replace(/[^a-z0-9\s-]/g, "").trim().replace(/\s+/g, "-").slice(0, 64) || "post";
-    let s = base, i = 2;
+    const base = title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .slice(0, 64) || "post";
+    let s = base,
+      i = 2;
     const existing = new Set(rows.map((r) => r.slug));
     while (existing.has(s)) s = `${base}-${i++}`;
     return s;
@@ -214,15 +267,17 @@ function AdminPosts() {
     setBusy(true);
     try {
       const now = new Date();
-      const date = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
+      const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
       const slug = draft.slug || genSlug(draft.title);
-
-      const created = await createPost(
-        { slug, title: draft.title, date, summary: draft.summary, content: draft.content, published: draft.published },
-        files
-      );
-
-      setRows((r) => [created, ...r]);
+      // Create the post in Supabase.
+      const created = await createPost({ slug, title: draft.title, date, summary: draft.summary, content: draft.content, published: draft.published }, files);
+      // Update the rows state and sync to localStorage in a single callback.
+      setRows((r) => {
+        const next = [created, ...r];
+        // Sync the newly created post along with existing rows to localStorage.
+        syncToLocal(next);
+        return next;
+      });
       setDraft({ slug: "", title: "", summary: "", content: "", published: false });
       setFiles([]);
     } catch (e: any) {
@@ -240,7 +295,13 @@ function AdminPosts() {
   async function onDelete(id: string) {
     if (!confirm("Delete post?")) return;
     await deletePost(id);
-    setRows((r) => r.filter((p) => p.id !== id));
+    // Remove the post from state and update localStorage.
+    setRows((r) => {
+      const next = r.filter((p) => p.id !== id);
+      // Sync updated list to localStorage.
+      syncToLocal(next);
+      return next;
+    });
   }
 
   return (
@@ -254,19 +315,16 @@ function AdminPosts() {
           <label className="inline-flex items-center gap-2 text-xs">
             <input type="checkbox" checked={draft.published} onChange={(e) => setDraft({ ...draft, published: e.target.checked })} /> Published
           </label>
-
           <div className="grid gap-2">
             <label className="text-xs">Attachments (images/videos)</label>
             <input type="file" multiple accept="image/*,video/*" onChange={onPick} className="block w-full text-sm" />
             {files.length > 0 && <div className="text-xs opacity-70">{files.length} file(s) selected</div>}
           </div>
-
           <button disabled={busy} onClick={onCreate} className="inline-flex items-center gap-2 rounded border border-[#4a5a45] bg-[#3a4538] px-3 py-1 text-sm hover:border-[var(--primary)]">
             <Save className="h-4 w-4" /> {busy ? "Saving..." : "Save post"}
           </button>
         </div>
       </Panel>
-
       <Panel title="All posts" rightTag={`${rows.length}`}>
         {rows.length === 0 ? (
           <div className="text-sm opacity-70">No posts.</div>
@@ -276,10 +334,11 @@ function AdminPosts() {
               <div key={p.id} className="rounded border border-[#4a5a45] p-3">
                 <div className="flex flex-wrap items-center gap-2 justify-between">
                   <div className="font-medium text-[var(--accent)]">{p.title}</div>
-                  <div className="text-xs opacity-70">{p.date} • {p.published ? "Published" : "Draft"}</div>
+                  <div className="text-xs opacity-70">
+                    {p.date} • {p.published ? "Published" : "Draft"}
+                  </div>
                 </div>
                 <div className="text-xs opacity-80 break-all">/blog/{p.slug}</div>
-
                 {Array.isArray(p.attachments) && p.attachments.length > 0 && (
                   <div className="mt-2 grid gap-2 sm:grid-cols-3">
                     {p.attachments.map((a: any) =>
@@ -291,7 +350,6 @@ function AdminPosts() {
                     )}
                   </div>
                 )}
-
                 <div className="mt-2 flex gap-2">
                   <button
                     onClick={() => window.dispatchEvent(new CustomEvent("kabuto:pre-navigate", { detail: { nextPath: `/blog/${p.slug}` } }))}
@@ -325,7 +383,9 @@ function AdminPortfolio() {
 
   React.useEffect(() => {
     void refresh();
-    const onData = async (e: any) => { if (e?.detail?.scope === "portfolio") await refresh(); };
+    const onData = async (e: any) => {
+      if (e?.detail?.scope === "portfolio") await refresh();
+    };
     window.addEventListener("kabuto:data", onData);
     return () => window.removeEventListener("kabuto:data", onData);
   }, [refresh]);
@@ -333,7 +393,8 @@ function AdminPortfolio() {
   async function onPick(ev: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(ev.target.files ?? []);
     if (!files.length) return;
-    setBusy(true); setProgress(0);
+    setBusy(true);
+    setProgress(0);
     const tick = setInterval(() => setProgress((p) => (p === null || p >= 90 ? 90 : p + 3)), 80);
     try {
       await addPortfolioFiles(files);
@@ -350,7 +411,8 @@ function AdminPortfolio() {
     ev.preventDefault();
     const files = Array.from(ev.dataTransfer.files ?? []);
     if (!files.length) return;
-    setBusy(true); setProgress(0);
+    setBusy(true);
+    setProgress(0);
     const tick = setInterval(() => setProgress((p) => (p === null || p >= 90 ? 90 : p + 3)), 80);
     try {
       await addPortfolioFiles(files);
@@ -374,34 +436,36 @@ function AdminPortfolio() {
           <div className="text-sm opacity-80">Drag & drop images/videos here</div>
           <label className="inline-flex items-center gap-2 text-sm cursor-pointer px-3 py-2 rounded border border-white/15 bg-white/10 hover:bg-white/15">
             <input type="file" multiple accept="image/*,video/*" className="hidden" onChange={onPick} />
-            Choose files…
+            <span className="opacity-80">Select files</span>
           </label>
           {busy && (
-            <div className="w-full max-w-md h-2 rounded bg-black/30 overflow-hidden">
-              <div className="h-full bg-white/70" style={{ width: `${progress ?? 0}%`, transition: "width 160ms linear" }} />
+            <div className="mt-2 text-xs">
+              Uploading... {progress !== null ? `${progress}%` : ""}
             </div>
           )}
         </div>
       </Panel>
-
-      <Panel title="Portfolio items" rightTag={`${items.length}`}>
+      <Panel title="Portfolio" rightTag={`${items.length}`}
+      >
         {items.length === 0 ? (
-          <div className="text-sm opacity-70">No portfolio items uploaded.</div>
+          <div className="text-sm opacity-70">No items.</div>
         ) : (
-          <div className="grid gap-3 md:grid-cols-4 sm:grid-cols-2">
-            {items.map((it) => (
-              <div key={it.id} className="relative rounded border border-[#4a5a45] p-2">
-                {it.type === "image" ? (
-                  <img src={it.src} alt="item" className="w-full h-auto object-contain rounded" />
+          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+            {items.map((item) => (
+              <div key={item.id} className="relative rounded border border-[#4a5a45] p-2">
+                {item.type === "video" ? (
+                  <video src={item.src} className="w-full h-auto rounded" controls />
                 ) : (
-                  <video src={it.src} className="w-full h-auto object-contain rounded" muted autoPlay loop playsInline />
+                  <img src={item.src} className="w-full h-auto rounded" alt="Portfolio item" />
                 )}
                 <button
-                  onClick={() => deletePortfolioItem(it.id)}
-                  className="absolute top-1 right-1 h-5 w-5 rounded-full bg-black/60 text-white flex items-center justify-center text-xs hover:bg-black/80"
-                  title="Delete"
+                  onClick={() => {
+                    if (!confirm("Delete item?")) return;
+                    deletePortfolioItem(item.id).then(() => refresh());
+                  }}
+                  className="absolute top-1 right-1 inline-flex items-center gap-1 rounded border border-[#4a5a45] px-2 py-1 text-xs hover:border-red-400"
                 >
-                  <X className="h-3 w-3" />
+                  <Trash2 className="h-4 w-4" /> Delete
                 </button>
               </div>
             ))}
