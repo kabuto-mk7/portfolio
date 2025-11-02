@@ -51,7 +51,7 @@ export function EsportsPage() {
   }
   const [rows, setRows] = React.useState<EventRow[]>([]);
   React.useEffect(() => {
-    const load = () => setRows(loadEvents());
+    const load = async () => setRows(await loadEvents());
     load();
     const onChange = (e: any) => { if (e.detail?.type === "events") load(); };
     window.addEventListener("kabuto:data", onChange as any);
