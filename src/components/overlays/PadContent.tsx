@@ -3,16 +3,18 @@ import React from "react";
 import tape from "/assets/kabuto/ui/tape.png";
 import sticky from "/assets/kabuto/ui/sticky.png";
 import cracked from "/assets/kabuto/ui/cracked.jpg";
-import { loadPortfolioItems } from "@/lib/storage";
+import { listPortfolioItems } from "@/lib/storage";
 import type { MediaItem } from "@/types";
 import { usePreloadImages } from "@/hooks/usePreloadImages";
 const selfPNG = "/assets/kabuto/portfolio/self.png";
 
 export function PortfolioPadContent() {
-  const [items, setItems] = React.useState<MediaItem[]>(() => loadPortfolioItems());
-  React.useEffect(() => {
-    const load = () => setItems(loadPortfolioItems());
-    load();
+  const [items, setItems] = React.useState<MediaItem[]>([]);
+
+  const load = React.useCallback(async () => {
+    // if you kept loadPortfolioItems, just await that instead
+    const rows = await listPortfolioItems();
+    setItems(rows);
     const onChange = (e: any) => { if (e.detail?.type === "portfolio") load(); };
     window.addEventListener("kabuto:data", onChange);
     return () => window.removeEventListener("kabuto:data", onChange);

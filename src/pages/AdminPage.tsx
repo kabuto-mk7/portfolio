@@ -3,7 +3,7 @@ import { Panel, Window } from "@/ui/Window";
 import type { EventRow, Post, MediaItem } from "@/types";
 
 // Events stay in local content:
-import { loadEvents, saveEvents, loadPosts, savePosts } from "@/lib/content";
+import { loadEvents, saveEvents, savePosts } from "@/lib/content";
 
 // Portfolio (Supabase/IndexedDB layer):
 import { addPortfolioFiles, deletePortfolioItem, listPortfolioItems } from "@/lib/storage";
@@ -12,8 +12,7 @@ import { addPortfolioFiles, deletePortfolioItem, listPortfolioItems } from "@/li
 import { createPost, listPostsAdmin, deletePost } from "@/lib/storage";
 
 import { supabase } from "@/lib/supabase";
-import { Plus, Save, Trash2, PencilLine, X } from "lucide-react";
-import { img } from "framer-motion/client";
+import { Plus, Save, Trash2, PencilLine} from "lucide-react";
 
 /* =========================
    Admin Page (auth)

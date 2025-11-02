@@ -25,7 +25,6 @@ import { ClassicTaskbar } from "./ui/Taskbar";
 import BlogIndexPage from "@/pages/blog/index";
 import BlogSlugPage from "@/pages/blog/slug";
 
-
 export default function KabutoHub90s() {
   const [path] = usePath();
 
@@ -45,6 +44,12 @@ export default function KabutoHub90s() {
   const tape   = "/assets/kabuto/ui/tape.png";
   const crackedBG = "/assets/kabuto/ui/cracked.jpg";
   const selfPNG = "/assets/kabuto/portfolio/self.png";
+
+  // helper to reliably hide splash (used by timer + animation callback)
+  const hideSplash = React.useCallback(() => {
+    setSplashShowing(false);
+    removeHtmlLock();
+  }, []);
 
   useCursorTrail(!(transitioning || splashShowing));
 
@@ -102,14 +107,32 @@ export default function KabutoHub90s() {
         setTimeout(()=> setTransitioning(false), 500);
       }, 200);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // keep html lock in sync
   React.useEffect(() => {
     const el = document.documentElement;
     if (splashShowing) el.classList.add("splash-lock"); else el.classList.remove("splash-lock");
     return () => el.classList.remove("splash-lock");
   }, [splashShowing]);
+
+  // fallback timer: if animation never fires, still hide splash
+  React.useEffect(() => {
+    if (!splashShowing) return;
+    const t = window.setTimeout(() => hideSplash(), 1600); // ~ equals your exit delay
+    return () => window.clearTimeout(t);
+  }, [splashShowing, hideSplash]);
+
+  // reduced-motion guard: immediately hide if user prefers it
+  React.useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const maybeHide = () => { if (mq.matches && splashShowing) hideSplash(); };
+    maybeHide();
+    const onChange = (e: MediaQueryListEvent) => { if (e.matches) hideSplash(); };
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+  }, [splashShowing, hideSplash]);
 
   React.useEffect(() => {
     document.title =
@@ -121,7 +144,7 @@ export default function KabutoHub90s() {
     link.href = FAVICON_SRC;
   }, [path]);
 
-  const [navH, setNavH] = React.useState(48);
+  const [, setNavH] = React.useState(48);
   const navRefCb = React.useCallback((el: HTMLDivElement | null) => { navRef.current = el; if (!el) return; const r = () => setNavH(el.offsetHeight || 48); r(); new ResizeObserver(r).observe(el); }, []);
   const global = (
     <style>{`
@@ -139,7 +162,7 @@ export default function KabutoHub90s() {
   else if (path === "/lab") view = <LabHomePage/>;
   else if (path === "/blog") view = <BlogIndexPage/>;
   else if (path.startsWith("/blog/"))
-  view = <BlogSlugPage slug={decodeURIComponent(path.replace("/blog/",""))} />;
+    view = <BlogSlugPage slug={decodeURIComponent(path.replace("/blog/",""))} />;
   else if (path === "/esports") view = <EsportsPage/>;
   else if (path === "/commissions") view = <CommissionsPage/>;
   else if (path === "/portfolio") view = <PortfolioPage/>;
@@ -200,13 +223,30 @@ export default function KabutoHub90s() {
         )}
       </div>
 
-      <AnimatePresence>{transitioning && (<motion.div className="fixed inset-0 z-[180] bg-black" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} transition={{ duration:0.5 }}/>)}</AnimatePresence>
+      <AnimatePresence>
+        {transitioning && (
+          <motion.div
+            className="fixed inset-0 z-[180] bg-black"
+            initial={{ opacity:0 }}
+            animate={{ opacity:1 }}
+            exit={{ opacity:0 }}
+            transition={{ duration:0.5 }}
+          />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {splashShowing && splashImage && (
-          <motion.div id="kabuto-splash" key={splashImage} className="fixed inset-0 z-[190] grid place-items-center bg-black"
-            initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} transition={{ duration:0.45 }}
-            onAnimationComplete={() => { const id = window.setTimeout(()=>{ setSplashShowing(false); removeHtmlLock(); }, 1400); }}>
+          <motion.div
+            id="kabuto-splash"
+            key={splashImage}
+            className="fixed inset-0 z-[190] grid place-items-center bg-black"
+            initial={{ opacity:0 }}
+            animate={{ opacity:1 }}
+            exit={{ opacity:0 }}
+            transition={{ duration:0.45 }}
+            onAnimationComplete={hideSplash}
+          >
             <img src={splashImage} alt="splash" className="max-w-[70vw] w-[680px] h-auto object-contain"/>
           </motion.div>
         )}
@@ -217,9 +257,18 @@ export default function KabutoHub90s() {
       </div>
 
       {Array.from({ length: 10 }).map((_, i) => (
-        <span key={i} id={`ktrail-${i}`} className="pointer-events-none fixed"
-          style={{ left:0, top:0, width:24, height:24, backgroundImage:`url("${CURSOR_URL}")`, backgroundRepeat:"no-repeat", backgroundSize:"contain",
-                   filter:"drop-shadow(0 0 6px rgba(0,0,0,0.8)) drop-shadow(0 0 6px rgba(0,255,0,0.35))", zIndex:2147483647, opacity:0, transform:"translate(-50%, -50%)" }}/>
+        <span
+          key={i}
+          id={`ktrail-${i}`}
+          className="pointer-events-none fixed"
+          style={{
+            left:0, top:0, width:24, height:24,
+            backgroundImage:`url("${CURSOR_URL}")`,
+            backgroundRepeat:"no-repeat", backgroundSize:"contain",
+            filter:"drop-shadow(0 0 6px rgba(0,0,0,0.8)) drop-shadow(0 0 6px rgba(0,255,0,0.35))",
+            zIndex:2147483647, opacity:0, transform:"translate(-50%, -50%)"
+          }}
+        />
       ))}
     </div>
   );
