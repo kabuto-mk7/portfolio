@@ -160,7 +160,7 @@ export function RootDesktopPage() {
 
       <div
         className="absolute flex items-end gap-2"
-        style={{ right: "2vw", bottom: "12vh", zIndex: 3 }}
+        style={{ right: "2vw", bottom: "6vh", zIndex: 3 }}
       >
         <div className="flex flex-col items-center">
           <img
