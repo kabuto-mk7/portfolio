@@ -219,12 +219,6 @@ function IPhonePadOverlay({
   onClose: () => void;
   children?: React.ReactNode;
 }) {
-  const SCREEN_INSETS = {
-    left:  "10.2%",
-    right: "35%",
-    top:   "1.8%",
-    bottom:"29.0%",
-  };
 
   const SCREEN_BG = "#0b0b0b";
 
