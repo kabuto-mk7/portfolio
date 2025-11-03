@@ -3,6 +3,20 @@ import React from "react";
 
 type Item = { type: "image" | "video"; src: string };
 
+// small-screen heuristic (same breakpoint logic you’ve used elsewhere)
+function useIsSmall() {
+  const pick = () =>
+    typeof window !== "undefined" &&
+    (window.innerWidth < 900 || window.innerHeight > window.innerWidth);
+  const [small, setSmall] = React.useState(pick);
+  React.useEffect(() => {
+    const on = () => setSmall(pick());
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  return small;
+}
+
 export default function PortfolioWin95Window({
   items,
   onClose,
@@ -10,6 +24,8 @@ export default function PortfolioWin95Window({
   items: Item[];
   onClose: () => void;
 }) {
+  const isSmall = useIsSmall();
+
   const bevelUp: React.CSSProperties = {
     borderTop: "1px solid #fff",
     borderLeft: "1px solid #fff",
@@ -45,13 +61,30 @@ export default function PortfolioWin95Window({
     return () => window.removeEventListener("keydown", onKey);
   }, [viewer, next, prev]);
 
-  /* Layout tuning */
-  const MAX_THUMB_H = "clamp(90px, 14vh, 160px)";
-  const MAX_WRAP_W = "1760px";
-  const PAD_X = 48;
+  /* ── Layout tuning (desktop vs mobile) ───────────────────────────────── */
+  // Desktop (keeps your current look)
+  const DESKTOP = {
+    MAX_THUMB_H: "clamp(90px, 14vh, 160px)",
+    MAX_WRAP_W: "1760px",
+    PAD_X: 48,
+    GAP_X: 40, // tailwind gap-x-10
+    GAP_Y: 56, // tailwind gap-y-14
+  };
 
-  // ── Touch swipe in fullscreen viewer ───────────────────────────────────────
-  const touchRef = React.useRef<{x:number;y:number;t:number}|null>(null);
+  // Mobile (denser rows + smaller margins)
+  const MOBILE = {
+    // slightly smaller height => more per row; vw keeps consistency across devices
+    MAX_THUMB_H: "clamp(74px, 22vw, 120px)",
+    MAX_WRAP_W: "1000px", // doesn’t really matter; we center anyway
+    PAD_X: 12,
+    GAP_X: 14,
+    GAP_Y: 22,
+  };
+
+  const L = isSmall ? MOBILE : DESKTOP;
+
+  // ── Touch swipe in fullscreen viewer ───────────────────────────────────
+  const touchRef = React.useRef<{ x: number; y: number; t: number } | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
     const t = e.touches[0];
     touchRef.current = { x: t.clientX, y: t.clientY, t: Date.now() };
@@ -63,9 +96,8 @@ export default function PortfolioWin95Window({
     const dx = t.clientX - t0.x;
     const dy = t.clientY - t0.y;
     const dt = Date.now() - t0.t;
-
-    const absX = Math.abs(dx), absY = Math.abs(dy);
-    // quick-ish, mostly horizontal swipe
+    const absX = Math.abs(dx),
+      absY = Math.abs(dy);
     if (dt < 600 && absX > 40 && absX > absY) {
       if (dx < 0) next();
       else prev();
@@ -110,16 +142,23 @@ export default function PortfolioWin95Window({
           <div
             className="mx-auto w-full"
             style={{
-              maxWidth: MAX_WRAP_W,
-              paddingLeft: PAD_X,
-              paddingRight: PAD_X,
-              paddingTop: 24,
-              paddingBottom: 64,
+              maxWidth: L.MAX_WRAP_W,
+              paddingLeft: L.PAD_X,
+              paddingRight: L.PAD_X,
+              paddingTop: isSmall ? 16 : 24,
+              paddingBottom: isSmall ? 48 : 64,
             }}
           >
             <div
-              className="flex flex-wrap items-start justify-center gap-x-10 gap-y-14"
-              style={{ ["--max-thumb-h" as any]: MAX_THUMB_H } as React.CSSProperties}
+              // we can’t use responsive tailwind gap utilities here because values are dynamic,
+              // so we apply them inline:
+              className="flex flex-wrap items-start justify-center"
+              style={
+                {
+                  ["--max-thumb-h" as any]: L.MAX_THUMB_H,
+                  gap: `${L.GAP_Y}px ${L.GAP_X}px`,
+                } as React.CSSProperties
+              }
             >
               {items.map((it, i) => (
                 <button
@@ -133,7 +172,7 @@ export default function PortfolioWin95Window({
                     <img
                       src={it.src}
                       alt=""
-                      className="block w-auto h-auto max-h-[var(--max-thumb-h)] object-contain rounded-[10px] 
+                      className="block w-auto h-auto max-h-[var(--max-thumb-h)] object-contain rounded-[10px]
                                  shadow-[0_6px_18px_rgba(0,0,0,.22)] group-hover:shadow-[0_10px_26px_rgba(0,0,0,.32)] transition-shadow"
                       loading="lazy"
                       decoding="async"
