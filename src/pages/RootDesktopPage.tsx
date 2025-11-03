@@ -51,6 +51,22 @@ export function RootDesktopPage() {
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
+  React.useEffect(() => {
+  // Stop the browser from restoring scroll from the previous route
+  if ('scrollRestoration' in history) {
+    history.scrollRestoration = 'manual';
+  }
+
+  // In case some parent/container is scrollable:
+  const el = document.scrollingElement || document.documentElement;
+
+  // Run at next frame to beat any layout thrash
+  requestAnimationFrame(() => {
+    // Hard reset
+    el.scrollTop = 0;
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  });
+}, []);
 
   // --- Authoring icon definitions ---
   const desktopAuthoring: IconItem[] = [
