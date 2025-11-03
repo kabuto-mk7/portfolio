@@ -49,6 +49,7 @@ export function EsportsPage() {
     const t = Date.parse(d);
     return isNaN(t) ? 0 : t;
   }
+
   const [rows, setRows] = React.useState<EventRow[]>([]);
   React.useEffect(() => {
     const load = async () => setRows(await loadEvents());
@@ -57,75 +58,185 @@ export function EsportsPage() {
     window.addEventListener("kabuto:data", onChange as any);
     return () => window.removeEventListener("kabuto:data", onChange as any);
   }, []);
+
   usePreloadImages([...RIGHT_STACK_IMAGES]);
 
   const visibleSorted = React.useMemo(() => {
-    const vis = (rows as (EventRow & {published?:boolean})[]).filter(r=>r.published !== false);
-    return vis.sort((a,b)=> dateToNum(b.date) - dateToNum(a.date));
+    const vis = (rows as (EventRow & { published?: boolean })[])
+      .filter(r => r.published !== false);
+    return vis.sort((a, b) => dateToNum(b.date) - dateToNum(a.date));
   }, [rows]);
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
+    <main className="mx-auto max-w-6xl px-4 sm:px-5 md:px-6 py-6 md:py-8">
       <Window title="E-Sports">
         <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_300px]">
+          {/* LEFT / MAIN */}
           <div className="space-y-6">
             <Panel title="Gear list" rightTag="kit.v1">
-              <SpecList specs={{ mouse:"Intellimouse Optical 1.1A", keyboard:"HHKB Professional Classic", monitor:"BenQ XL2720Z", headset:"Sennheiser HD598", pad:"SkyPAD 3.0 Yuki-Aim" }}/>
-            </Panel>
-            <Panel title="Bio" rightTag="player.txt">
-              <div className="text-sm opacity-80 space-y-3 leading-relaxed">
-                <p>My E-sports journey started young — my dad played CS 1.6 and Source in ESEA and CAP. I played Team Fortress 2 competitively and attended 3 LANs. I switched to Apex Legends in 2019, and played Super Smash Bros. Ultimate from 2020–2023. I took a big hiatus and now I’m pursuing: Apex Legends, CS2, Tekken 8, and SF6.</p>
+              <div className="text-[13px] sm:text-sm">
+                <SpecList
+                  specs={{
+                    mouse: "Intellimouse Optical 1.1A",
+                    keyboard: "HHKB Professional Classic",
+                    monitor: "BenQ XL2720Z",
+                    headset: "Sennheiser HD598",
+                    pad: "SkyPAD 3.0 Yuki-Aim",
+                  }}
+                />
               </div>
             </Panel>
-            <Panel title="Current Ranks" rightTag="mmr.v1">
-              <SpecList specs={{ "Apex Legends":"Master", CS2:"Premier 18,000", "Tekken 8":"Tekken Emperor", "Street Fighter 6":"Master" }}/>
+
+            <Panel title="Bio" rightTag="player.txt">
+              <div className="text-[13px] sm:text-sm opacity-80 space-y-3 leading-relaxed break-words">
+                <p>
+                  My E-sports journey started young — my dad played CS 1.6 and
+                  Source in ESEA and CAP. I played Team Fortress 2 competitively
+                  and attended 3 LANs. I switched to Apex Legends in 2019, and
+                  played Super Smash Bros. Ultimate from 2020–2023. I took a big
+                  hiatus and now I’m pursuing: Apex Legends, CS2, Tekken 8, and
+                  SF6.
+                </p>
+              </div>
             </Panel>
+
+            <Panel title="Current Ranks" rightTag="mmr.v1">
+              <div className="text-[13px] sm:text-sm">
+                <SpecList
+                  specs={{
+                    "Apex Legends": "Master",
+                    CS2: "Premier 18,000",
+                    "Tekken 8": "Tekken Emperor",
+                    "Street Fighter 6": "Master",
+                  }}
+                />
+              </div>
+            </Panel>
+
             <Panel title="Events & placements" rightTag={`${visibleSorted.length}`}>
-              {visibleSorted.length === 0 ? (
-                <div className="text-sm opacity-70">No entries yet.</div>
-              ) : (
-                <div className="overflow-x-auto rounded-[6px] border border-[#4a5a45]">
-                  <table className="w-full text-xs">
-                    <thead className="bg-[#334031] text-[var(--accent)]">
-                      <tr>
-                        <th className="px-2 py-2 text-left">Game</th>
-                        <th className="px-2 py-2 text-left">Date</th>
-                        <th className="px-2 py-2 text-left">Location</th>
-                        <th className="px-2 py-2 text-left">Event</th>
-                        <th className="px-2 py-2 text-left">Placement</th>
-                        <th className="px-2 py-2 text-left">Tier</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visibleSorted.map((r) => {
-                        const tier = placementTierLabel(r.placement);
-                        const bg = placementColor(tier);
-                        return (
-                          <tr key={r.id} className="border-t border-[#2a3328]">
-                            <td className="px-2 py-2">{r.game}</td>
-                            <td className="px-2 py-2">{r.date}</td>
-                            <td className="px-2 py-2">{r.location}</td>
-                            <td className="px-2 py-2">{r.event}</td>
-                            <td className="px-2 py-2">{r.placement}</td>
-                            <td className="px-2 py-2">
-                              <span className="inline-block px-2 py-0.5 rounded-[4px]" style={{ background:bg, color:"#132016" }} title={tier || ""}>{tier || "—"}</span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              {/* Mobile: cards; Desktop/Tablet: table */}
+              <div className="md:hidden space-y-3">
+                {visibleSorted.length === 0 ? (
+                  <div className="text-sm opacity-70">No entries yet.</div>
+                ) : (
+                  visibleSorted.map((r) => {
+                    const tier = placementTierLabel(r.placement);
+                    const bg = placementColor(tier);
+                    return (
+                      <div
+                        key={r.id}
+                        className="rounded-[6px] border border-[#4a5a45] p-3 text-[13px] leading-5 bg-[rgba(19,32,22,0.35)]"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="font-medium break-words">
+                            {r.event}
+                          </div>
+                          <span
+                            className="shrink-0 rounded-[4px] px-2 py-0.5 text-xs"
+                            style={{ background: bg, color: "#132016" }}
+                            title={tier || ""}
+                          >
+                            {tier || "—"}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1">
+                          <div className="opacity-70">Game</div>
+                          <div className="text-right break-words">{r.game}</div>
+                          <div className="opacity-70">Date</div>
+                          <div className="text-right">{r.date}</div>
+                          <div className="opacity-70">Location</div>
+                          <div className="text-right break-words">{r.location}</div>
+                          <div className="opacity-70">Placement</div>
+                          <div className="text-right">{r.placement || "—"}</div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="hidden md:block">
+                {visibleSorted.length === 0 ? (
+                  <div className="text-sm opacity-70">No entries yet.</div>
+                ) : (
+                  <div className="overflow-x-auto rounded-[6px] border border-[#4a5a45]">
+                    <table className="w-full text-xs">
+                      <thead className="bg-[#334031] text-[var(--accent)]">
+                        <tr>
+                          <th className="px-2 py-2 text-left">Game</th>
+                          <th className="px-2 py-2 text-left">Date</th>
+                          <th className="px-2 py-2 text-left">Location</th>
+                          <th className="px-2 py-2 text-left">Event</th>
+                          <th className="px-2 py-2 text-left">Placement</th>
+                          <th className="px-2 py-2 text-left">Tier</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleSorted.map((r) => {
+                          const tier = placementTierLabel(r.placement);
+                          const bg = placementColor(tier);
+                          return (
+                            <tr key={r.id} className="border-t border-[#2a3328]">
+                              <td className="px-2 py-2">{r.game}</td>
+                              <td className="px-2 py-2">{r.date}</td>
+                              <td className="px-2 py-2">{r.location}</td>
+                              <td className="px-2 py-2">{r.event}</td>
+                              <td className="px-2 py-2">{r.placement}</td>
+                              <td className="px-2 py-2">
+                                <span
+                                  className="inline-block px-2 py-0.5 rounded-[4px]"
+                                  style={{ background: bg, color: "#132016" }}
+                                  title={tier || ""}
+                                >
+                                  {tier || "—"}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </Panel>
           </div>
 
-          <div className="space-y-4">
-            {RIGHT_STACK_IMAGES.map((src,i)=>(
-              <div key={i} className="rounded-[6px] border border-[#4a5a45] overflow-hidden">
-                <img src={src} alt={`sidebar art ${i+1}`} className="w-full h-auto object-cover" loading="lazy"/>
+          {/* RIGHT / IMAGES */}
+          {/* Desktop/tablet: original vertical stack */}
+          <div className="hidden md:block space-y-4">
+            {RIGHT_STACK_IMAGES.map((src, i) => (
+              <div
+                key={i}
+                className="rounded-[6px] border border-[#4a5a45] overflow-hidden"
+              >
+                <img
+                  src={src}
+                  alt={`sidebar art ${i + 1}`}
+                  className="w-full h-auto object-cover"
+                  loading="lazy"
+                />
               </div>
             ))}
+          </div>
+
+          {/* Mobile: slim horizontal scroller to avoid huge vertical gaps/overflow */}
+          <div className="md:hidden -mx-1">
+            <div className="flex gap-2 overflow-x-auto px-1 py-1 snap-x snap-mandatory">
+              {RIGHT_STACK_IMAGES.map((src, i) => (
+                <div
+                  key={i}
+                  className="snap-start shrink-0 w-[70%] max-w-[280px] rounded-[6px] border border-[#4a5a45] overflow-hidden"
+                >
+                  <img
+                    src={src}
+                    alt={`sidebar art ${i + 1}`}
+                    className="w-full h-[140px] object-cover"
+                    loading="lazy"
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </Window>
