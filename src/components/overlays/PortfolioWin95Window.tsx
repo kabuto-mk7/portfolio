@@ -2,7 +2,8 @@ import React from "react";
 
 type Item = { type: "image" | "video"; src: string };
 
-/* --- Helper: probe intrinsic aspect ratios for images & videos --- */
+/* (kept) ratio probe — still useful for the fullscreen viewer,
+   but NOT used to size the grid tiles anymore */
 function useMediaRatios(items: Item[]) {
   const [ratios, setRatios] = React.useState<(number | null)[]>(
     () => items.map(() => null)
@@ -22,9 +23,10 @@ function useMediaRatios(items: Item[]) {
             if (!alive) return;
             setRatios((prev) => {
               const next = [...prev];
-              next[i] = img.naturalWidth && img.naturalHeight
-                ? img.naturalWidth / img.naturalHeight
-                : 1.6;
+              next[i] =
+                img.naturalWidth && img.naturalHeight
+                  ? img.naturalWidth / img.naturalHeight
+                  : 1.6;
               return next;
             });
             resolve();
@@ -56,7 +58,6 @@ function useMediaRatios(items: Item[]) {
     });
 
     void Promise.all(loaders);
-
     return () => {
       alive = false;
     };
@@ -84,8 +85,9 @@ export function PortfolioWin95Window({
     borderRight: "1px solid #fff",
     borderBottom: "1px solid #fff",
   };
+
   const [viewer, setViewer] = React.useState<number | null>(null);
-  const ratios = useMediaRatios(items);
+  const ratios = useMediaRatios(items); // used for fullscreen viewer only
 
   const next = React.useCallback(
     () => setViewer((v) => (v === null ? 0 : (v + 1) % items.length)),
@@ -95,6 +97,10 @@ export function PortfolioWin95Window({
     () => setViewer((v) => (v === null ? 0 : (v - 1 + items.length) % items.length)),
     [items.length]
   );
+
+  // uniform tile sizing (matches img 2 look)
+  const TILE_W = 260;            // px
+  const TILE_RATIO = 4 / 3;      // 4:3 like classic thumbnails
 
   return (
     <div className="fixed inset-0 z-[210] bg-black/45">
@@ -128,54 +134,52 @@ export function PortfolioWin95Window({
           <span>Help</span>
         </div>
 
-        {/* Scrollable content; centered grid anchored to the top */}
+        {/* Scrollable content; left-aligned neat grid */}
         <div className="absolute left-0 right-0 bottom-0 top-[28px] overflow-auto">
-          <div className="mx-auto max-w-[1500px] px-4 pt-3 pb-10">
+          <div className="mx-auto max-w-[1600px] px-6 pt-5 pb-12">
             <div
-              className="grid gap-4 place-content-start justify-center"
-              style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}
+              className="grid gap-6 justify-start"
+              style={{
+                gridTemplateColumns: `repeat(auto-fill, ${TILE_W}px)`,
+              }}
             >
-              {items.map((it, i) => {
-                const r = ratios[i] ?? 16 / 9; // fallback until probed
-                return (
-                  <button
-                    key={i}
-                    onClick={() => setViewer(i)}
-                    title={`work ${i + 1}`}
-                    className="rounded-[10px] overflow-hidden bg-transparent border border-black/20 hover:border-black/50 focus:outline-none focus:ring-2 focus:ring-black/60"
-                    style={{
-                      width: "clamp(160px, 18vw, 240px)",
-                      aspectRatio: String(r), // keep the tile’s aspect equal to the media
-                      background:
-                        "linear-gradient(180deg, rgba(0,0,0,.06), rgba(0,0,0,.08))",
-                    }}
-                  >
-                    <div className="w-full h-full grid place-items-center">
-                      {it.type === "image" ? (
-                        <img
-                          src={it.src}
-                          alt=""
-                          className="w-full h-full object-contain"
-                          loading="lazy"
-                          decoding="async"
-                        />
-                      ) : (
-                        <video
-                          src={it.src}
-                          className="w-full h-full object-contain"
-                          muted
-                          autoPlay
-                          loop
-                          playsInline
-                        />
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
+              {items.map((it, i) => (
+                <button
+                  key={i}
+                  onClick={() => setViewer(i)}
+                  title={`work ${i + 1}`}
+                  className="rounded-[10px] overflow-hidden bg-white/80 border border-black/15 shadow-[0_2px_12px_rgba(0,0,0,.15)] hover:shadow-[0_4px_18px_rgba(0,0,0,.25)] transition-shadow focus:outline-none focus:ring-2 focus:ring-black/50"
+                  style={{
+                    width: TILE_W,
+                    aspectRatio: `${TILE_RATIO}`, // UNIFORM tile ratio
+                  }}
+                >
+                  {/* media is contained; no stretching; small padding for the framed look */}
+                  <div className="w-full h-full p-1.5">
+                    {it.type === "image" ? (
+                      <img
+                        src={it.src}
+                        alt=""
+                        className="w-full h-full object-contain"
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    ) : (
+                      <video
+                        src={it.src}
+                        className="w-full h-full object-contain"
+                        muted
+                        autoPlay
+                        loop
+                        playsInline
+                      />
+                    )}
+                  </div>
+                </button>
+              ))}
             </div>
 
-            <div className="mt-3 text-[11px] text-black/80 text-center">
+            <div className="mt-5 text-[11px] text-black/80">
               Double-click (tap) an icon to preview. Close returns to the scene.
             </div>
           </div>
