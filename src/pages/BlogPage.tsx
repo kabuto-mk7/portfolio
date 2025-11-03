@@ -19,7 +19,11 @@ function mdToHtml(md: string) {
 export function BlogPage() {
   const posts = React.useMemo(()=> loadPosts().filter(p=>p.published).sort((a,b)=> (a.date < b.date ? 1 : -1)), []);
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
+    <main className="
+        mx-auto w-full
+        px-3 sm:px-4 md:px-6
+        max-w-screen-md md:max-w-screen-lg lg:max-w-screen-xl
+      ">
       <Window title="Blog">
         {posts.length === 0 ? (
           <div className="text-sm opacity-70">No posts yet.</div>
