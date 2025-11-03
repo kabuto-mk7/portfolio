@@ -1,37 +1,16 @@
+// src/components/overlays/PortfolioWin95Window.tsx
 import React from "react";
 
 type Item = { type: "image" | "video"; src: string };
 
-function useMediaPreload(items: Item[]) {
-  React.useEffect(() => {
-    const loaders = items.map((it) =>
-      it.type === "image"
-        ? new Promise<void>((resolve) => {
-            const img = new Image();
-            img.decoding = "async";
-            img.loading = "eager";
-            img.src = it.src;
-            img.onload = img.onerror = () => resolve();
-          })
-        : new Promise<void>((resolve) => {
-            const v = document.createElement("video");
-            v.preload = "metadata";
-            v.src = it.src;
-            v.onloadedmetadata = v.onerror = () => resolve();
-          })
-    );
-    void Promise.all(loaders);
-  }, [items]);
-}
-
-export function PortfolioWin95Window({
+export default function PortfolioWin95Window({
   items,
   onClose,
 }: {
   items: Item[];
   onClose: () => void;
 }) {
-  // subtle Win95-ish bevels
+  // Win95 bevel helpers
   const bevelUp: React.CSSProperties = {
     borderTop: "1px solid #fff",
     borderLeft: "1px solid #fff",
@@ -45,11 +24,8 @@ export function PortfolioWin95Window({
     borderBottom: "1px solid #fff",
   };
 
-  // preload media so the viewer opens instantly
-  useMediaPreload(items);
-
+  // viewer state
   const [viewer, setViewer] = React.useState<number | null>(null);
-
   const next = React.useCallback(
     () => setViewer((v) => (v === null ? 0 : (v + 1) % items.length)),
     [items.length]
@@ -59,7 +35,7 @@ export function PortfolioWin95Window({
     [items.length]
   );
 
-  // keyboard navigation in viewer
+  // keyboard controls while viewing
   React.useEffect(() => {
     if (viewer === null) return;
     const onKey = (e: KeyboardEvent) => {
@@ -71,13 +47,13 @@ export function PortfolioWin95Window({
     return () => window.removeEventListener("keydown", onKey);
   }, [viewer, next, prev]);
 
-  // Uniform thumbnails (matches your reference)
-  const TILE_W = 260; // px (adjust as you like)
-  const TILE_RATIO = 4 / 3;
+  // --- Row height: equal row height, varied widths (Apple Photos look)
+  // tweak as you like; clamp keeps it responsive
+  const ROW_H = "clamp(120px, 18vh, 200px)";
 
   return (
     <div className="fixed inset-0 z-[210] bg-black/45">
-      {/* Title bar */}
+      {/* title bar */}
       <div
         className="fixed left-0 right-0 top-0 h-7 flex items-center justify-between px-2 select-none"
         style={{ background: "#000080", borderBottom: "1px solid #000040", color: "#fff" }}
@@ -94,7 +70,7 @@ export function PortfolioWin95Window({
         </button>
       </div>
 
-      {/* Body fills viewport */}
+      {/* body */}
       <div className="fixed left-0 right-0 bottom-0 top-7 bg-[#c0c0c0]" style={{ ...bevelDown }}>
         {/* menu strip */}
         <div
@@ -107,53 +83,63 @@ export function PortfolioWin95Window({
           <span>Help</span>
         </div>
 
-        {/* Scrollable content */}
+        {/* scroll area */}
         <div className="absolute left-0 right-0 bottom-0 top-[28px] overflow-auto">
-          <div className="mx-auto max-w-[1600px] px-6 pt-5 pb-12">
+          {/* wrapper is centered on the page and grows up to a max width */}
+          <div className="mx-auto w-full max-w-[1680px] px-[40px] pt-6 pb-16">
+            {/* FLEX ROWS: equal height, variable width thumbs, top-aligned lines */}
             <div
-              className="grid gap-6 justify-start"
-              style={{ gridTemplateColumns: `repeat(auto-fill, ${TILE_W}px)` }}
+              className="flex flex-wrap items-start justify-start gap-x-10 gap-y-18"
+              style={
+                {
+                  // a CSS var for row height used by each thumb
+                  // (so you can adjust from one place)
+                  ["--row-h" as any]: ROW_H,
+                } as React.CSSProperties
+              }
             >
               {items.map((it, i) => (
                 <button
                   key={i}
                   onClick={() => setViewer(i)}
                   title={`work ${i + 1}`}
-                  className="rounded-[10px] overflow-hidden bg-white/80 border border-black/15 shadow-[0_2px_12px_rgba(0,0,0,.15)] hover:shadow-[0_4px_18px_rgba(0,0,0,.25)] transition-shadow focus:outline-none focus:ring-2 focus:ring-black/50"
-                  style={{ width: TILE_W, aspectRatio: `${TILE_RATIO}` }}
+                  className="group relative inline-flex items-stretch justify-center outline-none"
+                  style={{
+                    height: `var(--row-h)`,
+                    // let width be defined by the media's natural aspect (via w-auto on the media)
+                    // so each thumbnail keeps its intrinsic ratio
+                    borderRadius: 8,
+                  }}
                 >
-                  <div className="w-full h-full p-1.5">
-                    {it.type === "image" ? (
-                      <img
-                        src={it.src}
-                        alt=""
-                        className="w-full h-full object-contain"
-                        loading="lazy"
-                        decoding="async"
-                      />
-                    ) : (
-                      <video
-                        src={it.src}
-                        className="w-full h-full object-contain"
-                        muted
-                        autoPlay
-                        loop
-                        playsInline
-                      />
-                    )}
-                  </div>
+                  {/* subtle hover ring like the sample, no card/background */}
+                  <span className="pointer-events-none absolute inset-0 rounded-[8px] ring-0 ring-black/0 group-hover:ring-2 group-hover:ring-black/20 transition" />
+                  {it.type === "image" ? (
+                    <img
+                      src={it.src}
+                      alt=""
+                      className="h-full w-auto object-contain block"
+                      loading="lazy"
+                      decoding="async"
+                      draggable={false}
+                    />
+                  ) : (
+                    <video
+                      src={it.src}
+                      className="h-full w-auto object-contain block"
+                      muted
+                      autoPlay
+                      loop
+                      playsInline
+                    />
+                  )}
                 </button>
               ))}
-            </div>
-
-            <div className="mt-5 text-[11px] text-black/80">
-              Double-click (tap) an icon to preview. Close returns to the scene.
             </div>
           </div>
         </div>
       </div>
 
-      {/* Fullscreen viewer with arrows */}
+      {/* fullscreen viewer */}
       {viewer !== null && (
         <div className="fixed inset-0 z-[220] bg-black/85 grid place-items-center">
           <button
@@ -200,5 +186,3 @@ export function PortfolioWin95Window({
     </div>
   );
 }
-
-export default PortfolioWin95Window;

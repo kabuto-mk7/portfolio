@@ -1,5 +1,5 @@
 import { ClassicTaskbar } from "@/ui/Taskbar";
-import { PortfolioWin95Window } from "@/components/overlays/PortfolioWin95Window";
+import PortfolioWin95Window from "@/components/overlays/PortfolioWin95Window";
 import { RatesPadContent, ContactPadContent, PortfolioPadContent } from "@/components/overlays/PadContent";
 import { usePreloadImages } from "@/hooks/usePreloadImages";
 import { useStageAnchor, useAlphaHover, useWeaponSway } from "@/hooks/portfolioStage";
