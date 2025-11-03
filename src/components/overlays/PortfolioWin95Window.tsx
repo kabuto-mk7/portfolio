@@ -73,9 +73,8 @@ export default function PortfolioWin95Window({
 
   // Mobile (denser rows + smaller margins)
   const MOBILE = {
-    // slightly smaller height => more per row; vw keeps consistency across devices
     MAX_THUMB_H: "clamp(74px, 22vw, 120px)",
-    MAX_WRAP_W: "1000px", // doesn’t really matter; we center anyway
+    MAX_WRAP_W: "1000px",
     PAD_X: 12,
     GAP_X: 14,
     GAP_Y: 22,
@@ -96,13 +95,26 @@ export default function PortfolioWin95Window({
     const dx = t.clientX - t0.x;
     const dy = t.clientY - t0.y;
     const dt = Date.now() - t0.t;
-    const absX = Math.abs(dx),
-      absY = Math.abs(dy);
+    const absX = Math.abs(dx), absY = Math.abs(dy);
     if (dt < 600 && absX > 40 && absX > absY) {
       if (dx < 0) next();
       else prev();
     }
     touchRef.current = null;
+  };
+
+  // ── Sticky image sizing/positioning ────────────────────────────────────
+  // Tweak these if you want it bigger/smaller.
+  const stickyStyle: React.CSSProperties = {
+    position: "fixed", // stays pinned inside this modal
+    right: isSmall ? 10 : 24,
+    bottom: isSmall ? 72 : 96, // clears the taskbar-ish strip
+    width: isSmall ? "clamp(120px, 32vw, 180px)" : "clamp(180px, 18vw, 260px)",
+    transform: "rotate(-20deg)",
+    filter: "drop-shadow(0 10px 16px rgba(0,0,0,.35))",
+    zIndex: 215, // above grid, below fullscreen viewer controls (220)
+    pointerEvents: "none", // don’t block clicks on thumbnails
+    userSelect: "none",
   };
 
   return (
@@ -150,8 +162,6 @@ export default function PortfolioWin95Window({
             }}
           >
             <div
-              // we can’t use responsive tailwind gap utilities here because values are dynamic,
-              // so we apply them inline:
               className="flex flex-wrap items-start justify-center"
               style={
                 {
@@ -194,6 +204,14 @@ export default function PortfolioWin95Window({
             </div>
           </div>
         </div>
+
+        {/* Sticky image (bottom-right, above thumbnails) */}
+        <img
+          src="/assets/kabuto/ui/sticky01.png"
+          alt=""
+          style={stickyStyle}
+          aria-hidden="true"
+        />
       </div>
 
       {/* Fullscreen viewer (now swipeable) */}
