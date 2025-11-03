@@ -86,7 +86,7 @@ export function PortfolioPage() {
   const MOBILE_ZOOM = 1.12;
   const MOBILE_PAN_X = 10;
   const MOBILE_PAN_Y = 0;
-  const MOBILE_SCALE_MUL = 0.5; // gentle zoom-out; try 0.92 or 0.90 for wider
+  const MOBILE_SCALE_MUL = 0.55; // gentle zoom-out; try 0.92 or 0.90 for wider
 
   const focus = React.useMemo(
     () => (isSmall ? buildFocus(base, MOBILE_ZOOM, MOBILE_PAN_X, MOBILE_PAN_Y) : undefined),
