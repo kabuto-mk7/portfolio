@@ -1,3 +1,4 @@
+// src/pages/PortfolioPage.tsx
 import { ClassicTaskbar } from "@/ui/Taskbar";
 import PortfolioWin95Window from "@/components/overlays/PortfolioWin95Window";
 import { RatesPadContent, ContactPadContent, PortfolioPadContent } from "@/components/overlays/PadContent";
@@ -20,6 +21,37 @@ import React from "react";
 
 type PadMode = "portfolio" | "rates" | "contact" | null;
 
+/** Portrait background used only as a FULL-VIEWPORT UNDERLAY on mobile. */
+const BG_MOBILE = "/assets/kabuto/portfolio/bg-mobile.jpeg";
+
+/** Small-screen heuristic with resize updates. */
+function useIsSmall() {
+  const get = () =>
+    typeof window !== "undefined" &&
+    (window.innerWidth < 900 || window.innerHeight > window.innerWidth);
+  const [small, setSmall] = React.useState(get);
+  React.useEffect(() => {
+    const on = () => setSmall(get());
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  return small;
+}
+
+/** Build a focus rect from base + zoom factor + pan in stage px. */
+function buildFocus(
+  base: { x: number; y: number; w: number; h: number },
+  factor: number,
+  dx: number,
+  dy: number
+) {
+  const cx = base.x + base.w / 2;
+  const cy = base.y + base.h / 2;
+  const w = base.w * factor;
+  const h = base.h * factor;
+  return { x: cx - w / 2 + dx, y: cy - h / 2 + dy, w, h };
+}
+
 export function PortfolioPage() {
   // gunshot SFX
   const fireRef = React.useRef<HTMLAudioElement | null>(null);
@@ -38,17 +70,45 @@ export function PortfolioPage() {
     } catch {}
   }, []);
 
-  // asset preloads
-  usePreloadImages([BG, OV, P1, P2, P3, IPAD, PF_VIEWMODEL]);
+  // preload (include mobile underlay)
+  usePreloadImages([BG, BG_MOBILE, OV, P1, P2, P3, IPAD, PF_VIEWMODEL]);
 
-  // 1920×1080 stage mapping
-  const m = useStageAnchor();
+  const isSmall = useIsSmall();
+
+  // Stage base (logical authored stage)
+  const base = React.useMemo(() => ({ x: 50, y: 10, w: 1920, h: 1080 }), []);
+
+  /* ── Mobile composition knobs ────────────────────────────────────────────
+     - MOBILE_ZOOM affects the "focus rect" (composition feel).
+     - MOBILE_PAN_X/Y recenters the focus.
+     - MOBILE_SCALE_MUL is the *real* zoom (applied after cover); with backfill
+       enabled, values < 1 zoom OUT beyond cover; > 1 zoom IN.               */
+  const MOBILE_ZOOM = 1.12;
+  const MOBILE_PAN_X = 10;
+  const MOBILE_PAN_Y = 0;
+  const MOBILE_SCALE_MUL = 0.5; // gentle zoom-out; try 0.92 or 0.90 for wider
+
+  const focus = React.useMemo(
+    () => (isSmall ? buildFocus(base, MOBILE_ZOOM, MOBILE_PAN_X, MOBILE_PAN_Y) : undefined),
+    [isSmall, base, MOBILE_ZOOM, MOBILE_PAN_X, MOBILE_PAN_Y]
+  );
+
+  // Map stage to viewport. On mobile, allow underfill (backfill=true) so scaleMul < 1 takes effect.
+  const m = useStageAnchor({
+    focus,
+    scaleMul: isSmall ? MOBILE_SCALE_MUL : 1,
+    backfill: isSmall ? true : false,
+  });
 
   // pads / animations
   const [pad, setPad] = React.useState<PadMode>(null);
   const [padVisible, setPadVisible] = React.useState(false);
   const [gunDown, setGunDown] = React.useState(false);
   const anim = React.useRef(false);
+
+  // Mobile gun placement tweaks
+  const baseLift = isSmall ? -120 : 0; // negative lifts up
+  const gunScale = isSmall ? 1.18 : 1;
 
   const openPad = async (kind: Exclude<PadMode, null>) => {
     if (anim.current) return;
@@ -75,17 +135,16 @@ export function PortfolioPage() {
     anim.current = false;
   };
 
-  // smooth weapon sway (uses stage coords)
+  // smooth weapon sway
   const { tx, ty } = useWeaponSway(m, true, { ampX: 46, ampY: 22, smooth: 0.18 });
 
   // portfolio window state
   const [pfWinOpen, setPfWinOpen] = React.useState(false);
 
-  // ✅ async load (works with Supabase/IndexedDB) + live updates
+  // async load + live updates
   const [pfItems, setPfItems] = React.useState<MediaItem[]>([]);
   React.useEffect(() => {
     let alive = true;
-
     const init = async () => {
       const rows = await loadPortfolioItems();
       if (alive) setPfItems(rows);
@@ -93,14 +152,12 @@ export function PortfolioPage() {
     void init();
 
     const onData = async (e: any) => {
-      // accept either {detail: {scope:"portfolio"}} or {detail: {type:"portfolio"}}
       const scope = e?.detail?.scope ?? e?.detail?.type;
       if (scope === "portfolio") {
         const rows = await loadPortfolioItems();
         if (alive) setPfItems(rows);
       }
     };
-
     window.addEventListener("kabuto:data", onData);
     return () => {
       alive = false;
@@ -117,10 +174,29 @@ export function PortfolioPage() {
     ],
     [] // handlers stable
   );
-  const hover = useAlphaHover(persons as any, m);
+
+  const { hover, pickAt } = useAlphaHover(persons as any, m);
 
   return (
     <div className="fixed inset-0 overflow-hidden" style={{ background: "#000" }}>
+      {/* ── MOBILE UNDERLAY (bg-mobile) — lives OUTSIDE the scaled stage ── */}
+      {isSmall && (
+        <img
+          src={BG_MOBILE}
+          alt=""
+          className="fixed inset-0 pointer-events-none select-none"
+          style={{
+            zIndex: 0,
+            width: "120vw",
+            height: "120vh",
+            objectFit: "cover",
+            // optional cosmetics:
+            // filter: "blur(24px)",
+            // transform: "scale(1.04)",
+          }}
+        />
+      )}
+
       {/* 1920×1080 stage */}
       <div
         className="absolute"
@@ -131,10 +207,19 @@ export function PortfolioPage() {
           height: 1080,
           transform: `translate(${m.ox}px,${m.oy}px) scale(${m.scale})`,
           transformOrigin: "top left",
-          zIndex: 1,
+          zIndex: 2, // sits above underlay
         }}
       >
-        <img src={BG} alt="" draggable={false} className="absolute left-0 top-0" style={{ width: 1920, height: 1080 }} />
+        {/* IMPORTANT: keep the authored 1920×1080 background inside the stage
+            so overlays/silhouettes line up perfectly on all devices. */}
+        <img
+          src={BG}
+          alt=""
+          draggable={false}
+          className="absolute left-0 top-0"
+          style={{ width: 1920, height: 1080 }}
+        />
+
         {persons.map((p) => (
           <img
             key={p.key}
@@ -153,30 +238,45 @@ export function PortfolioPage() {
             }}
           />
         ))}
-        <img src={OV} alt="" className="absolute left-0 top-0 pointer-events-none" style={{ width: 1920, height: 1080, zIndex: 3 }} />
 
-        {/* big invisible click surface that triggers whichever person is "hover" */}
+        <img
+          src={OV}
+          alt=""
+          className="absolute left-0 top-0 pointer-events-none"
+          style={{ width: 1920, height: 1080, zIndex: 3 }}
+        />
+
+        {/* Unified pointer surface (tap-to-open on mobile) */}
         <button
           aria-label={hover ?? "scene"}
-          onClick={() => {
-            const t = (persons as any).find((pp: any) => pp.key === hover);
+          onPointerDown={(e) => {
+            const key = pickAt(e.clientX, e.clientY);
+            if (!key) return;
+            const t = (persons as any).find((pp: any) => pp.key === key);
             if (t) t.onClick();
           }}
           className="absolute left-0 top-0"
-          style={{ width: 1920, height: 1080, zIndex: 4, background: "transparent", border: "none" }}
+          style={{
+            width: 1920,
+            height: 1080,
+            zIndex: 4,
+            background: "transparent",
+            border: "none",
+            touchAction: "manipulation",
+          }}
         />
       </div>
 
-      {/* Weapon: outer wraps sway, inner handles slide when pad opens */}
+      {/* Weapon: outer wraps sway, inner slides when pad opens */}
       <div
         className="absolute pointer-events-none"
         style={{
-          right: "-26px",
-          bottom: "-22px",
-          width: "600px",
-          maxWidth: "52vw",
+          right: isSmall ? "-190px" : "-26px",
+          bottom: isSmall ? "-100px" : "-22px",
+          width: isSmall ? "9000px" : "600px",
+          maxWidth: isSmall ? "110vw" : "52vw",
           zIndex: 4,
-          transform: `translate(${tx}px, ${ty}px)`, // sway only
+          transform: `translate(${tx}px, ${ty + baseLift}px)`,
         }}
       >
         <img
@@ -186,7 +286,7 @@ export function PortfolioPage() {
             width: "100%",
             objectFit: "contain",
             filter: "drop-shadow(0 0 12px rgba(0,0,0,.45))",
-            transform: `translateY(${gunDown ? 520 : 0}px)`, // slide down/up
+            transform: `translateY(${gunDown ? 520 : 0}px) scale(${gunScale})`,
             transition: "transform 420ms cubic-bezier(.22,.61,.36,1)",
           }}
         />
@@ -200,11 +300,11 @@ export function PortfolioPage() {
             style={{ zIndex: 5, opacity: padVisible ? 1 : 0, transition: "opacity 420ms ease" }}
             onClick={closePad}
           />
-          <div className="absolute inset-x-0" style={{ bottom: "-10px", zIndex: 6 }}>
+          <div className="absolute inset-x-0" style={{ bottom: isSmall ? "-2px" : "-10px", zIndex: 6 }}>
             <div
               className="relative mx-auto"
               style={{
-                width: "min(1200px, 92vw)",
+                width: isSmall ? "min(1200px, 100vw)" : "min(1200px, 92vw)",
                 transform: `translateY(${padVisible ? "0%" : "106%"})`,
                 transition: "transform 420ms cubic-bezier(.22,.61,.36,1)",
                 filter: "drop-shadow(0 24px 60px rgba(0,0,0,.55))",
@@ -213,7 +313,13 @@ export function PortfolioPage() {
               <img src={IPAD} alt="" className="w-full h-auto block select-none" draggable={false} />
               <div
                 className="absolute overflow-hidden rounded-[8px] bg-[#0f0f0f]"
-                style={{ left: "25%", right: "26.4583%", top: "14.0741%", bottom: "21.2037%", boxShadow: "inset 0 0 0 1px rgba(255,255,255,.06)" }}
+                style={{
+                  left: isSmall ? "18%" : "25%",
+                  right: isSmall ? "18%" : "26.4583%",
+                  top: isSmall ? "12%" : "14.0741%",
+                  bottom: isSmall ? "17%" : "21.2037%",
+                  boxShadow: "inset 0 0 0 1px rgba(255,255,255,.06)",
+                }}
               >
                 {pad === "portfolio" && <PortfolioPadContent />}
                 {pad === "rates" && <RatesPadContent />}
@@ -222,7 +328,7 @@ export function PortfolioPage() {
               <button
                 onClick={closePad}
                 className="absolute h-8 w-8 grid place-items-center rounded-full bg-black/70 text-white text-[14px] shadow-[0_2px_10px_rgba(0,0,0,.4)] hover:bg-black/80"
-                style={{ top: "5%", right: "150px", zIndex: 7 }}
+                style={{ top: isSmall ? "3%" : "5%", right: isSmall ? "6%" : "150px", zIndex: 7 }}
                 aria-label="Close"
               >
                 ×

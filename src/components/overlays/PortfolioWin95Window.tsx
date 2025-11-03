@@ -1,3 +1,4 @@
+// src/components/overlays/PortfolioWin95Window.tsx
 import React from "react";
 
 type Item = { type: "image" | "video"; src: string };
@@ -9,7 +10,6 @@ export default function PortfolioWin95Window({
   items: Item[];
   onClose: () => void;
 }) {
-  // Win95 bevel helpers
   const bevelUp: React.CSSProperties = {
     borderTop: "1px solid #fff",
     borderLeft: "1px solid #fff",
@@ -45,14 +45,33 @@ export default function PortfolioWin95Window({
     return () => window.removeEventListener("keydown", onKey);
   }, [viewer, next, prev]);
 
-  /* Layout tuning — smaller thumbs + centered rows
-     - MAX_THUMB_H controls visual size (smaller per your ask)
-     - Gaps tuned to look like the sample (even gutters)
-     - Container centers the whole gallery and lets it *fill* width cleanly
-  */
-  const MAX_THUMB_H = "clamp(90px, 14vh, 160px)"; // smaller icons
-  const MAX_WRAP_W = "1760px";                    // how wide the whole gallery can grow
-  const PAD_X = 48;                                // left/right padding in px
+  /* Layout tuning */
+  const MAX_THUMB_H = "clamp(90px, 14vh, 160px)";
+  const MAX_WRAP_W = "1760px";
+  const PAD_X = 48;
+
+  // ── Touch swipe in fullscreen viewer ───────────────────────────────────────
+  const touchRef = React.useRef<{x:number;y:number;t:number}|null>(null);
+  const onTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    touchRef.current = { x: t.clientX, y: t.clientY, t: Date.now() };
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (!touchRef.current) return;
+    const t0 = touchRef.current;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - t0.x;
+    const dy = t.clientY - t0.y;
+    const dt = Date.now() - t0.t;
+
+    const absX = Math.abs(dx), absY = Math.abs(dy);
+    // quick-ish, mostly horizontal swipe
+    if (dt < 600 && absX > 40 && absX > absY) {
+      if (dx < 0) next();
+      else prev();
+    }
+    touchRef.current = null;
+  };
 
   return (
     <div className="fixed inset-0 z-[210] bg-black/45">
@@ -88,7 +107,6 @@ export default function PortfolioWin95Window({
 
         {/* Scroll area */}
         <div className="absolute left-0 right-0 bottom-0 top-[28px] overflow-auto">
-          {/* Center the whole gallery and let it fill the space */}
           <div
             className="mx-auto w-full"
             style={{
@@ -99,7 +117,6 @@ export default function PortfolioWin95Window({
               paddingBottom: 64,
             }}
           >
-            {/* Center each line; tallest item defines the line height; even gutters */}
             <div
               className="flex flex-wrap items-start justify-center gap-x-10 gap-y-14"
               style={{ ["--max-thumb-h" as any]: MAX_THUMB_H } as React.CSSProperties}
@@ -111,7 +128,6 @@ export default function PortfolioWin95Window({
                   title={`work ${i + 1}`}
                   className="group relative inline-flex items-center justify-center outline-none"
                 >
-                  {/* soft halo only on hover (no card/background) */}
                   <span className="pointer-events-none absolute inset-0 rounded-[10px] ring-0 ring-black/0 group-hover:ring-2 group-hover:ring-black/20 transition" />
                   {it.type === "image" ? (
                     <img
@@ -141,9 +157,13 @@ export default function PortfolioWin95Window({
         </div>
       </div>
 
-      {/* Fullscreen viewer */}
+      {/* Fullscreen viewer (now swipeable) */}
       {viewer !== null && (
-        <div className="fixed inset-0 z-[220] bg-black/85 grid place-items-center">
+        <div
+          className="fixed inset-0 z-[220] bg-black/85 grid place-items-center"
+          onTouchStart={onTouchStart}
+          onTouchEnd={onTouchEnd}
+        >
           <button
             className="absolute right-6 top-6 h-9 px-3 rounded bg-white/15 text-white"
             onClick={() => setViewer(null)}
