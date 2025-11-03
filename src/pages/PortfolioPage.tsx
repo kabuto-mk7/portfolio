@@ -38,6 +38,37 @@ function useIsSmall() {
   return small;
 }
 
+/** Disable page scrolling while mounted. */
+function useNoScroll(active: boolean = true) {
+  React.useEffect(() => {
+    if (!active || typeof document === "undefined") return;
+
+    const html = document.documentElement;
+    const body = document.body;
+
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    const prevHtmlOB = html.style.overscrollBehavior;
+    const prevBodyOB = body.style.overscrollBehavior;
+    const prevTouch = body.style.touchAction;
+
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    html.style.overscrollBehavior = "none";
+    body.style.overscrollBehavior = "none";
+    // prevents iOS rubber-band scroll when dragging
+    body.style.touchAction = "none";
+
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+      html.style.overscrollBehavior = prevHtmlOB;
+      body.style.overscrollBehavior = prevBodyOB;
+      body.style.touchAction = prevTouch;
+    };
+  }, [active]);
+}
+
 /** Build a focus rect from base + zoom factor + pan in stage px. */
 function buildFocus(
   base: { x: number; y: number; w: number; h: number },
@@ -53,6 +84,9 @@ function buildFocus(
 }
 
 export function PortfolioPage() {
+  // lock scroll on this page
+  useNoScroll(true);
+
   // gunshot SFX
   const fireRef = React.useRef<HTMLAudioElement | null>(null);
   React.useEffect(() => {
@@ -78,22 +112,18 @@ export function PortfolioPage() {
   // Stage base (logical authored stage)
   const base = React.useMemo(() => ({ x: 50, y: 10, w: 1920, h: 1080 }), []);
 
-  /* ── Mobile composition knobs ────────────────────────────────────────────
-     - MOBILE_ZOOM affects the "focus rect" (composition feel).
-     - MOBILE_PAN_X/Y recenters the focus.
-     - MOBILE_SCALE_MUL is the *real* zoom (applied after cover); with backfill
-       enabled, values < 1 zoom OUT beyond cover; > 1 zoom IN.               */
+  /* ── Mobile composition knobs ──────────────────────────────────────────── */
   const MOBILE_ZOOM = 1.12;
   const MOBILE_PAN_X = 10;
   const MOBILE_PAN_Y = 0;
-  const MOBILE_SCALE_MUL = 0.55; // gentle zoom-out; try 0.92 or 0.90 for wider
+  const MOBILE_SCALE_MUL = 0.55;
 
   const focus = React.useMemo(
     () => (isSmall ? buildFocus(base, MOBILE_ZOOM, MOBILE_PAN_X, MOBILE_PAN_Y) : undefined),
     [isSmall, base, MOBILE_ZOOM, MOBILE_PAN_X, MOBILE_PAN_Y]
   );
 
-  // Map stage to viewport. On mobile, allow underfill (backfill=true) so scaleMul < 1 takes effect.
+  // Map stage to viewport. On mobile, allow underfill so scaleMul < 1 takes effect.
   const m = useStageAnchor({
     focus,
     scaleMul: isSmall ? MOBILE_SCALE_MUL : 1,
@@ -177,8 +207,30 @@ export function PortfolioPage() {
 
   const { hover, pickAt } = useAlphaHover(persons as any, m);
 
+  /* ── Mobile feather for hard stage edges ──────────────────────────────── */
+  const stageFeatherMask = isSmall
+    ? {
+        WebkitMaskImage:
+          "linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 8%, rgba(0,0,0,1) 92%, rgba(0,0,0,0) 100%)",
+        maskImage:
+          "linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 8%, rgba(0,0,0,1) 92%, rgba(0,0,0,0) 100%)",
+        WebkitMaskSize: "100% 100%",
+        maskSize: "100% 100%",
+        WebkitMaskRepeat: "no-repeat",
+        maskRepeat: "no-repeat",
+      } as React.CSSProperties
+    : undefined;
+
   return (
-    <div className="fixed inset-0 overflow-hidden" style={{ background: "#000" }}>
+    <div
+      className="fixed inset-0 overflow-hidden"
+      style={{
+        background: "#000",
+        // stops pull-to-refresh / overscroll bounce
+        overscrollBehavior: "none",
+        height: "100dvh",
+      }}
+    >
       {/* ── MOBILE UNDERLAY (bg-mobile) — lives OUTSIDE the scaled stage ── */}
       {isSmall && (
         <img
@@ -190,9 +242,6 @@ export function PortfolioPage() {
             width: "120vw",
             height: "120vh",
             objectFit: "cover",
-            // optional cosmetics:
-            // filter: "blur(24px)",
-            // transform: "scale(1.04)",
           }}
         />
       )}
@@ -208,10 +257,10 @@ export function PortfolioPage() {
           transform: `translate(${m.ox}px,${m.oy}px) scale(${m.scale})`,
           transformOrigin: "top left",
           zIndex: 2, // sits above underlay
+          ...(stageFeatherMask || {}),
         }}
       >
-        {/* IMPORTANT: keep the authored 1920×1080 background inside the stage
-            so overlays/silhouettes line up perfectly on all devices. */}
+        {/* authored background inside the stage */}
         <img
           src={BG}
           alt=""
