@@ -45,8 +45,14 @@ export default function PortfolioWin95Window({
     return () => window.removeEventListener("keydown", onKey);
   }, [viewer, next, prev]);
 
-  // cap for thumbnails; tallest item on a line sets the line height
-  const MAX_THUMB_H = "clamp(120px, 20vh, 220px)";
+  /* Layout tuning — smaller thumbs + centered rows
+     - MAX_THUMB_H controls visual size (smaller per your ask)
+     - Gaps tuned to look like the sample (even gutters)
+     - Container centers the whole gallery and lets it *fill* width cleanly
+  */
+  const MAX_THUMB_H = "clamp(90px, 14vh, 160px)"; // smaller icons
+  const MAX_WRAP_W = "1760px";                    // how wide the whole gallery can grow
+  const PAD_X = 48;                                // left/right padding in px
 
   return (
     <div className="fixed inset-0 z-[210] bg-black/45">
@@ -82,14 +88,21 @@ export default function PortfolioWin95Window({
 
         {/* Scroll area */}
         <div className="absolute left-0 right-0 bottom-0 top-[28px] overflow-auto">
-          <div className="mx-auto w-full max-w-[1680px] px-10 pt-6 pb-16">
-            {/* FLEX WRAP: top-aligned lines; gaps create clean gutters.
-                Tallest item on each line defines the line height. */}
+          {/* Center the whole gallery and let it fill the space */}
+          <div
+            className="mx-auto w-full"
+            style={{
+              maxWidth: MAX_WRAP_W,
+              paddingLeft: PAD_X,
+              paddingRight: PAD_X,
+              paddingTop: 24,
+              paddingBottom: 64,
+            }}
+          >
+            {/* Center each line; tallest item defines the line height; even gutters */}
             <div
-              className="flex flex-wrap items-start justify-start gap-x-10 gap-y-12"
-              style={
-                { ["--max-thumb-h" as any]: MAX_THUMB_H } as React.CSSProperties
-              }
+              className="flex flex-wrap items-start justify-center gap-x-10 gap-y-14"
+              style={{ ["--max-thumb-h" as any]: MAX_THUMB_H } as React.CSSProperties}
             >
               {items.map((it, i) => (
                 <button
@@ -97,19 +110,15 @@ export default function PortfolioWin95Window({
                   onClick={() => setViewer(i)}
                   title={`work ${i + 1}`}
                   className="group relative inline-flex items-center justify-center outline-none"
-                  style={{
-                    // no fixed height → each item can be different height; line height becomes the tallest
-                    // we limit media height inside, not the container
-                  }}
                 >
-                  {/* hover halo (no background card) */}
+                  {/* soft halo only on hover (no card/background) */}
                   <span className="pointer-events-none absolute inset-0 rounded-[10px] ring-0 ring-black/0 group-hover:ring-2 group-hover:ring-black/20 transition" />
-
                   {it.type === "image" ? (
                     <img
                       src={it.src}
                       alt=""
-                      className="block w-auto h-auto max-h-[var(--max-thumb-h)] object-contain rounded-[10px] shadow-[0_8px_24px_rgba(0,0,0,.25)] group-hover:shadow-[0_12px_28px_rgba(0,0,0,.35)] transition-shadow"
+                      className="block w-auto h-auto max-h-[var(--max-thumb-h)] object-contain rounded-[10px] 
+                                 shadow-[0_6px_18px_rgba(0,0,0,.22)] group-hover:shadow-[0_10px_26px_rgba(0,0,0,.32)] transition-shadow"
                       loading="lazy"
                       decoding="async"
                       draggable={false}
@@ -117,7 +126,8 @@ export default function PortfolioWin95Window({
                   ) : (
                     <video
                       src={it.src}
-                      className="block w-auto h-auto max-h-[var(--max-thumb-h)] object-contain rounded-[10px] shadow-[0_8px_24px_rgba(0,0,0,.25)] group-hover:shadow-[0_12px_28px_rgba(0,0,0,.35)] transition-shadow"
+                      className="block w-auto h-auto max-h-[var(--max-thumb-h)] object-contain rounded-[10px]
+                                 shadow-[0_6px_18px_rgba(0,0,0,.22)] group-hover:shadow-[0_10px_26px_rgba(0,0,0,.32)] transition-shadow"
                       muted
                       autoPlay
                       loop
