@@ -1,8 +1,7 @@
 /* src/lib/storage.ts
    Unified storage layer for portfolio media, blog posts, and events.
    - Uses Supabase when VITE_SUPABASE_* are set
-   - Adds RLS-friendly helpers for Events (Supabase table)
-   - Optional progress for uploads (callback is optional)
+   - RLS-friendly: admin-only writes enforced via VITE_ADMIN_EMAIL
 */
 
 import type { MediaItem, Post, EventRow } from "@/types";
@@ -18,16 +17,23 @@ export const SB_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefi
 export const supabase: SupabaseClient | null =
   SB_URL && SB_ANON ? createClient(SB_URL, SB_ANON) : null;
 
+const ADMIN_EMAIL      = (import.meta.env.VITE_ADMIN_EMAIL || "").trim();
+
 const PORTFOLIO_BUCKET = import.meta.env.VITE_BUCKET_PORTFOLIO || "portfolio";
 const POSTS_BUCKET     = import.meta.env.VITE_BUCKET_POSTS     || "posts";
 const POSTS_TABLE      = import.meta.env.VITE_TABLE_POSTS      || "posts";
 const EVENTS_TABLE     = import.meta.env.VITE_TABLE_EVENTS     || "events";
 
-// Local keys used elsewhere (keep these two)
+/* Local keys (back-compat) */
 const LS_PORTFOLIO = "kabuto:portfolio";
 const LS_POSTS     = "kabuto:posts";
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Small utils                                                                */
+/* ────────────────────────────────────────────────────────────────────────── */
+
 function readLocalJSON<T>(key: string, fallback: T): T {
-  try { const s = localStorage.getItem(key); return s ? JSON.parse(s) as T : fallback; }
+  try { const s = localStorage.getItem(key); return s ? (JSON.parse(s) as T) : fallback; }
   catch { return fallback; }
 }
 function writeLocalJSON<T>(key: string, value: T): void {
@@ -37,7 +43,7 @@ function writeLocalJSON<T>(key: string, value: T): void {
 function randomId(prefix = "id") { return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`; }
 
 function fileType(f: File): MediaItem["type"] {
-  return f.type.toLowerCase().startsWith("video/") ? "video" : "image";
+  return (f.type || "").toLowerCase().startsWith("video/") ? "video" : "image";
 }
 function extToType(path: string): MediaItem["type"] {
   const p = path.toLowerCase();
@@ -47,7 +53,7 @@ function extToType(path: string): MediaItem["type"] {
 function getPublicUrl(bucket: string, path: string): string {
   if (!supabase) return "";
   const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  return data.publicUrl;
+  return data?.publicUrl || "";
 }
 
 async function removeFolder(bucket: string, prefix: string) {
@@ -56,6 +62,17 @@ async function removeFolder(bucket: string, prefix: string) {
   });
   const paths = (data || []).map(f => `${prefix}/${f.name}`);
   if (paths.length) await supabase!.storage.from(bucket).remove(paths);
+}
+
+/** Ensure current session is the admin (matches VITE_ADMIN_EMAIL). */
+async function ensureAdmin(): Promise<void> {
+  if (!supabase) throw new Error("Supabase not configured");
+  const { data } = await supabase.auth.getUser();
+  const email = data?.user?.email || "";
+  if (!email) throw new Error("Not authenticated (open the Admin page and sign in via magic link).");
+  if (ADMIN_EMAIL && email.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new Error("Signed-in user is not authorized for writes.");
+  }
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -91,7 +108,7 @@ export async function listPortfolioItems(): Promise<MediaItem[]> {
   return readLocalJSON<MediaItem[]>(LS_PORTFOLIO, []);
 }
 
-// Back-compat alias used by PortfolioPage in some branches
+// Back-compat alias used by PortfolioPage
 export async function loadPortfolioItems(): Promise<MediaItem[]> { return listPortfolioItems(); }
 
 export async function addPortfolioFiles(files: File[]): Promise<string[]>;
@@ -115,7 +132,7 @@ export async function addPortfolioFiles(files: File[], onProgress?: (p: number) 
     return ids;
   }
 
-  // fallback: cache in SW + index in LS
+  // fallback (SW cache + LS index)
   const existing = readLocalJSON<MediaItem[]>(LS_PORTFOLIO, []);
   const ids: string[] = []; let done = 0;
   const tick = () => onProgress?.(Math.round((done / files.length) * 100));
@@ -173,7 +190,7 @@ export async function listPostsAdmin(): Promise<BlogPostRow[]> {
   return readLocalJSON<BlogPostRow[]>(LS_POSTS, []);
 }
 
-// convenience for Blog page (it historically reads LS)
+/** legacy LS accessors (kept for BlogIndexPage that reads LS) */
 export function loadPosts(): Post[] {
   const rows = readLocalJSON<BlogPostRow[]>(LS_POSTS, []);
   return rows.map(rowToPost);
@@ -182,12 +199,45 @@ export function savePosts(posts: Post[]) {
   writeLocalJSON<Post[]>(LS_POSTS, posts);
 }
 
+/** Upload single post attachment and return {id,type,src} with PUBLIC URL. */
+export async function uploadPostAttachment(file: File): Promise<BlogAttachment> {
+  if (!supabase) throw new Error("Supabase not configured");
+  await ensureAdmin();
+
+  const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
+  const id = crypto.randomUUID();
+  const key = `attachments/${id}.${ext}`;
+
+  const { error: upErr } = await supabase
+    .storage
+    .from(POSTS_BUCKET)
+    .upload(key, file, {
+      cacheControl: "31536000",
+      upsert: false,
+      contentType: file.type || undefined,
+    });
+
+  if (upErr) {
+    // clearer guidance
+    if ((upErr as any)?.statusCode === "404") {
+      throw new Error(`Storage bucket "${POSTS_BUCKET}" not found. Create it in Supabase Storage or set VITE_BUCKET_POSTS.`);
+    }
+    throw upErr;
+  }
+
+  const publicUrl = getPublicUrl(POSTS_BUCKET, key);
+  const type: "image" | "video" = (file.type || "").startsWith("video/") ? "video" : "image";
+  return { id: key, type, src: publicUrl };
+}
+
 export async function createPost(
   post: { slug: string; title: string; date?: string; summary?: string; content?: string; published?: boolean },
   files: File[] = []
 ): Promise<string> {
   if (supabase) {
-    // unique slug generation (avoids 23505 unique violation)
+    await ensureAdmin();
+
+    // unique slug generation (avoid 23505)
     let base = (post.slug || post.title || "post")
       .toLowerCase().replace(/[^a-z0-9\s-]/g, "").trim().replace(/\s+/g, "-").slice(0,64);
     if (!base) base = "post";
@@ -207,24 +257,26 @@ export async function createPost(
     if (insErr || !inserted) throw insErr || new Error("Insert failed");
     const rowId = inserted.id as string;
 
-    const attachments: BlogAttachment[] = [];
-    for (let i=0;i<files.length;i++){
-      const f = files[i];
-      const path = `${rowId}/${Date.now()}_${i}_${f.name.replace(/\s+/g,"_")}`;
-      const { error } = await supabase.storage.from(POSTS_BUCKET).upload(path, f, {
-        upsert:true, cacheControl:"31536000", contentType: f.type || undefined,
-      });
-      if (error) {
-        if ((error as any)?.statusCode === "404")
-          throw new Error(`Storage bucket "${POSTS_BUCKET}" not found. Create it or set VITE_BUCKET_POSTS.`);
-        throw error;
+    // attachments
+    if (files.length) {
+      const attachments: BlogAttachment[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const path = `${rowId}/${Date.now()}_${i}_${f.name.replace(/\s+/g, "_")}`;
+        const { error } = await supabase.storage.from(POSTS_BUCKET).upload(path, f, {
+          upsert: true, cacheControl: "31536000", contentType: f.type || undefined,
+        });
+        if (error) {
+          if ((error as any)?.statusCode === "404")
+            throw new Error(`Storage bucket "${POSTS_BUCKET}" not found. Create it or set VITE_BUCKET_POSTS.`);
+          throw error;
+        }
+        attachments.push({ id: path, type: fileType(f), src: getPublicUrl(POSTS_BUCKET, path) });
       }
-      attachments.push({ id: path, type: fileType(f), src: getPublicUrl(POSTS_BUCKET, path) });
-    }
-    if (attachments.length){
       const { error: updErr } = await supabase.from(POSTS_TABLE).update({ attachments }).eq("id", rowId);
       if (updErr) throw updErr;
     }
+
     return rowId;
   }
 
@@ -254,7 +306,8 @@ export async function createPost(
 export async function deletePost(id: string): Promise<void> {
   if (!id) return;
   if (supabase) {
-    await removeFolder(POSTS_BUCKET, id);
+    await ensureAdmin();
+    await removeFolder(POSTS_BUCKET, id);     // remove /{postId}/* if used
     await supabase.from(POSTS_TABLE).delete().eq("id", id);
     return;
   }
@@ -318,7 +371,30 @@ export async function getPostBySlugPublic(slug: string): Promise<Post | null> {
 /* Events (Supabase table with RLS)                                           */
 /* ────────────────────────────────────────────────────────────────────────── */
 
+/** Public list (used by EsportsPage). Only published rows. */
 export async function listEvents(): Promise<EventRow[]> {
+  if (!supabase) throw new Error("Supabase not configured");
+  const { data, error } = await supabase
+    .from(EVENTS_TABLE)
+    .select("*")
+    .neq("published", false)              // treat null/true as visible
+    .order("date", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  return (data || []).map((r: any) => ({
+    id: r.id,
+    game: r.game ?? "",
+    date: r.date ? String(r.date) : "",
+    location: r.location ?? "",
+    event: r.event ?? "",
+    placement: r.placement ?? "",
+    published: !!r.published,
+  }));
+}
+
+/** Admin list (shows everything). */
+export async function listEventsAdmin(): Promise<EventRow[]> {
   if (!supabase) throw new Error("Supabase not configured");
   const { data, error } = await supabase
     .from(EVENTS_TABLE)
@@ -340,14 +416,13 @@ export async function listEvents(): Promise<EventRow[]> {
 
 export async function createEvent(row: Omit<EventRow,"id">): Promise<string> {
   if (!supabase) throw new Error("Supabase not configured");
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error("Not authenticated (login via admin).");
+  await ensureAdmin();
 
   const { data, error } = await supabase
     .from(EVENTS_TABLE)
     .insert({
       game: row.game ?? "",
-      date: row.date || null,
+      date: row.date || null,                // backend DATE column will cast "YYYY-MM-DD"
       location: row.location ?? "",
       event: row.event ?? "",
       placement: row.placement ?? "",
@@ -361,8 +436,7 @@ export async function createEvent(row: Omit<EventRow,"id">): Promise<string> {
 
 export async function updateEvent(id: string, patch: Partial<Omit<EventRow,"id">>): Promise<void> {
   if (!supabase) throw new Error("Supabase not configured");
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error("Not authenticated.");
+  await ensureAdmin();
 
   const { error } = await supabase
     .from(EVENTS_TABLE)
@@ -380,12 +454,13 @@ export async function updateEvent(id: string, patch: Partial<Omit<EventRow,"id">
 
 export async function deleteEvent(id: string): Promise<void> {
   if (!supabase) throw new Error("Supabase not configured");
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error("Not authenticated.");
+  await ensureAdmin();
 
   const { error } = await supabase.from(EVENTS_TABLE).delete().eq("id", id);
   if (error) throw error;
 }
+
+/** Back-compat alias for EsportsPage */
 export async function loadEvents(): Promise<EventRow[]> {
   return listEvents();
 }
