@@ -18,11 +18,17 @@ import {
 import { loadPortfolioItems } from "@/lib/storage";
 import type { MediaItem } from "@/types";
 import React from "react";
+import sticky from "/assets/kabuto/ui/sticky.png";
+import cracked from "/assets/kabuto/ui/cracked.jpg";
+import tape from "/assets/kabuto/ui/tape.png";
+const selfPNG = "/assets/kabuto/portfolio/self.png";
 
 type PadMode = "portfolio" | "rates" | "contact" | null;
 
 /** Portrait background used only as a FULL-VIEWPORT UNDERLAY on mobile. */
 const BG_MOBILE = "/assets/kabuto/portfolio/bg-mobile.jpeg";
+/** Your iPhone X mock image (adjust if your path differs). */
+const IPHONE_X = "/assets/kabuto/ui/iphoneX.png";
 
 /** Small-screen heuristic with resize updates. */
 function useIsSmall() {
@@ -56,7 +62,6 @@ function useNoScroll(active: boolean = true) {
     body.style.overflow = "hidden";
     html.style.overscrollBehavior = "none";
     body.style.overscrollBehavior = "none";
-    // prevents iOS rubber-band scroll when dragging
     body.style.touchAction = "none";
 
     return () => {
@@ -83,11 +88,235 @@ function buildFocus(
   return { x: cx - w / 2 + dx, y: cy - h / 2 + dy, w, h };
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+   MOBILE CONTACT STICKY (no legibility panel; add taped photo below)
+───────────────────────────────────────────────────────────────────────────*/
+function MobileContactSticky() {
+  usePreloadImages([sticky, cracked, tape, selfPNG]);
+
+  const WRAP_MAX = "360px";
+  const WRAP_MIN = "240px";
+  const BG_SCALE = 1;
+
+  return (
+    <div className="relative w-full h-full flex items-start justify-center p-3">
+      {/* Rotated cracked BG filling screen */}
+      <div className="absolute inset-0 overflow-hidden" style={{ zIndex: 0 }}>
+        <div
+          className="absolute"
+          style={{
+            left: "50%",
+            top: "50%",
+            width: `${BG_SCALE * 100}%`,
+            height: `${BG_SCALE * 100}%`,
+            transform: "translate(-50%, -50%) rotate(180deg)",
+            transformOrigin: "center center",
+            backgroundImage: `url(${cracked})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            filter: "brightness(.9)",
+          }}
+        />
+      </div>
+
+      {/* Subtle global darken */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{ zIndex: 1, background: "rgba(0,0,0,.15)" }}
+      />
+
+      {/* Content stack */}
+      <div
+        className="relative"
+        style={{ zIndex: 2, width: `clamp(${WRAP_MIN}, 92%, ${WRAP_MAX})` }}
+      >
+        {/* Sticky note */}
+        <div className="relative">
+          <img
+            src={sticky}
+            alt="sticky note"
+            className="w-full h-auto block select-none pointer-events-none drop-shadow-[0_4px_10px_rgba(0,0,0,.45)]"
+            draggable={false}
+          />
+          {/* Text directly on the sticky (no white square) */}
+          <div
+            className="absolute inset-0"
+            style={{
+              padding: "75px 30px 28px 24px",
+              color: "#171717",
+              fontWeight: 600,
+              fontSize: "clamp(13px, 3vw, 16px)",
+              lineHeight: 1.5,
+              WebkitFontSmoothing: "antialiased",
+              textRendering: "optimizeLegibility",
+              // light halo for texture without obvious box
+              textShadow: "0 1px 0 rgba(255,255,255,.45), 0 0 1px rgba(0,0,0,.2)",
+            }}
+          >
+            <div className="space-y-2">
+              <div>
+                <a
+                  className="underline"
+                  href="mailto:contact@kabuto.studio"
+                  style={{ color: "#0b1220", fontWeight: 700 }}
+                >
+                  contact@kabuto.studio
+                </a>
+              </div>
+              <div>discord: kabuto.</div>
+              <div>
+                IG —{" "}
+                <a
+                  href="https://instagram.com/kbt2k"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline"
+                  style={{ color: "#0b1220", fontWeight: 700 }}
+                >
+                  @kbt2k
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Photo with duct tape BELOW the post-it */}
+        <div className="relative mx-auto mt-4" style={{ width: "min(86%, 300px)" }}>
+          <img
+            src={selfPNG}
+            alt="profile"
+            loading="lazy"
+            decoding="async"
+            className="w-full h-auto rounded-[10px] object-cover border border-white/25 shadow-[0_8px_26px_rgba(0,0,0,.55)] bg-black/20"
+          />
+          <img
+            src={tape}
+            alt=""
+            className="absolute pointer-events-none select-none"
+            style={{
+              left: "50%",
+              top: "-30%",
+              transform: "translateX(-50%) rotate(-8deg)",
+              width: "64%",
+              filter: "drop-shadow(0 4px 6px rgba(0,0,0,0.55))",
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Mobile iPhone overlay — ONLY for 'rates' and 'contact'
+───────────────────────────────────────────────────────────────────────────*/
+function IPhonePadOverlay({
+  visible,
+  onClose,
+  children,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  children?: React.ReactNode;
+}) {
+  const SCREEN_INSETS = {
+    left:  "10.2%",
+    right: "35%",
+    top:   "1.8%",
+    bottom:"29.0%",
+  };
+
+  const SCREEN_BG = "#0b0b0b";
+
+  return (
+    <>
+      <div
+        className="fixed inset-0"
+        style={{
+          zIndex: 20,
+          background: "rgba(0,0,0,.5)",
+          opacity: visible ? 1 : 0,
+          transition: "opacity 360ms ease",
+        }}
+        onClick={onClose}
+      />
+
+      <div
+        className="fixed inset-x-0 bottom-0"
+        style={{
+          zIndex: 21,
+          transform: `translateY(${visible ? "0%" : "104%"})`,
+          transition: "transform 420ms cubic-bezier(.22,.61,.36,1)",
+        }}
+      >
+        <div
+          className="relative mx-auto"
+          style={{
+            width: "min(520px, 94vw)",
+            maxHeight: "86vh",
+            marginBottom: "1.5vh",
+            filter: "drop-shadow(0 24px 60px rgba(0,0,0,.55))",
+          }}
+        >
+          {/* Screen content behind PNG */}
+          <div
+            className="absolute"
+            style={{
+              zIndex: 21,
+              left: "10.2%",
+              right: "35%",
+              top: "1.8%",
+              bottom: "29.0%",
+              overflow: "hidden",
+              borderRadius: 24,
+              background: SCREEN_BG,
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div
+              style={{
+                height: "100%",
+                overflowY: "auto",
+                WebkitOverflowScrolling: "touch",
+              }}
+            >
+              {children}
+            </div>
+          </div>
+
+          <img
+            src={IPHONE_X}
+            alt=""
+            className="block select-none"
+            draggable={false}
+            style={{
+              zIndex: 22,
+              position: "relative",
+              width: "100%",
+              height: "auto",
+              pointerEvents: "none",
+            }}
+          />
+
+          <button
+            onClick={onClose}
+            className="absolute h-8 w-8 grid place-items-center rounded-full bg-black/70 text-white text-[14px] shadow-[0_2px_10px_rgba(0,0,0,.4)] hover:bg-black/80"
+            style={{ top: "5%", right: "6%", zIndex: 23 }}
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+        <div className="h-2" />
+      </div>
+    </>
+  );
+}
+
 export function PortfolioPage() {
-  // lock scroll on this page
   useNoScroll(true);
 
-  // gunshot SFX
   const fireRef = React.useRef<HTMLAudioElement | null>(null);
   React.useEffect(() => {
     const a = new Audio("/sfx/fire.mp3");
@@ -104,15 +333,12 @@ export function PortfolioPage() {
     } catch {}
   }, []);
 
-  // preload (include mobile underlay)
-  usePreloadImages([BG, BG_MOBILE, OV, P1, P2, P3, IPAD, PF_VIEWMODEL]);
+  usePreloadImages([BG, BG_MOBILE, OV, P1, P2, P3, IPAD, PF_VIEWMODEL, IPHONE_X]);
 
   const isSmall = useIsSmall();
 
-  // Stage base (logical authored stage)
   const base = React.useMemo(() => ({ x: 50, y: 10, w: 1920, h: 1080 }), []);
 
-  /* ── Mobile composition knobs ──────────────────────────────────────────── */
   const MOBILE_ZOOM = 1.12;
   const MOBILE_PAN_X = 10;
   const MOBILE_PAN_Y = 0;
@@ -120,25 +346,21 @@ export function PortfolioPage() {
 
   const focus = React.useMemo(
     () => (isSmall ? buildFocus(base, MOBILE_ZOOM, MOBILE_PAN_X, MOBILE_PAN_Y) : undefined),
-    [isSmall, base, MOBILE_ZOOM, MOBILE_PAN_X, MOBILE_PAN_Y]
+    [isSmall]
   );
 
-  // Map stage to viewport. On mobile, allow underfill so scaleMul < 1 takes effect.
   const m = useStageAnchor({
     focus,
     scaleMul: isSmall ? MOBILE_SCALE_MUL : 1,
     backfill: isSmall ? true : false,
   });
 
-  // pads / animations
   const [pad, setPad] = React.useState<PadMode>(null);
   const [padVisible, setPadVisible] = React.useState(false);
   const [gunDown, setGunDown] = React.useState(false);
   const anim = React.useRef(false);
 
-  // Mobile gun placement tweaks
-  const baseLift = isSmall ? -120 : 0; // negative lifts up
-  const gunScale = isSmall ? 1.18 : 1;
+  const baseLift = isSmall ? -120 : 0;
 
   const openPad = async (kind: Exclude<PadMode, null>) => {
     if (anim.current) return;
@@ -165,13 +387,10 @@ export function PortfolioPage() {
     anim.current = false;
   };
 
-  // smooth weapon sway
   const { tx, ty } = useWeaponSway(m, true, { ampX: 46, ampY: 22, smooth: 0.18 });
 
-  // portfolio window state
   const [pfWinOpen, setPfWinOpen] = React.useState(false);
 
-  // async load + live updates
   const [pfItems, setPfItems] = React.useState<MediaItem[]>([]);
   React.useEffect(() => {
     let alive = true;
@@ -195,19 +414,17 @@ export function PortfolioPage() {
     };
   }, []);
 
-  // clickable silhouettes
   const persons = React.useMemo(
     () => [
       { key: "rates" as const, src: P1, onClick: () => openPad("rates") },
       { key: "portfolio" as const, src: P2, onClick: () => { fire(); setPfWinOpen(true); } },
       { key: "contact" as const, src: P3, onClick: () => openPad("contact") },
     ],
-    [] // handlers stable
+    []
   );
 
   const { hover, pickAt } = useAlphaHover(persons as any, m);
 
-  /* ── Mobile feather for hard stage edges ──────────────────────────────── */
   const stageFeatherMask = isSmall
     ? {
         WebkitMaskImage:
@@ -221,17 +438,18 @@ export function PortfolioPage() {
       } as React.CSSProperties
     : undefined;
 
+  const useIPhoneOverlay = isSmall && (pad === "rates" || pad === "contact");
+
   return (
     <div
       className="fixed inset-0 overflow-hidden"
       style={{
         background: "#000",
-        // stops pull-to-refresh / overscroll bounce
         overscrollBehavior: "none",
         height: "100dvh",
       }}
     >
-      {/* ── MOBILE UNDERLAY (bg-mobile) — lives OUTSIDE the scaled stage ── */}
+      {/* Mobile underlay */}
       {isSmall && (
         <img
           src={BG_MOBILE}
@@ -256,11 +474,10 @@ export function PortfolioPage() {
           height: 1080,
           transform: `translate(${m.ox}px,${m.oy}px) scale(${m.scale})`,
           transformOrigin: "top left",
-          zIndex: 2, // sits above underlay
+          zIndex: 2,
           ...(stageFeatherMask || {}),
         }}
       >
-        {/* authored background inside the stage */}
         <img
           src={BG}
           alt=""
@@ -295,7 +512,6 @@ export function PortfolioPage() {
           style={{ width: 1920, height: 1080, zIndex: 3 }}
         />
 
-        {/* Unified pointer surface (tap-to-open on mobile) */}
         <button
           aria-label={hover ?? "scene"}
           onPointerDown={(e) => {
@@ -316,7 +532,7 @@ export function PortfolioPage() {
         />
       </div>
 
-      {/* Weapon: outer wraps sway, inner slides when pad opens */}
+      {/* Weapon */}
       <div
         className="absolute pointer-events-none"
         style={{
@@ -335,14 +551,22 @@ export function PortfolioPage() {
             width: "100%",
             objectFit: "contain",
             filter: "drop-shadow(0 0 12px rgba(0,0,0,.45))",
-            transform: `translateY(${gunDown ? 520 : 0}px) scale(${gunScale})`,
+            transform: `translateY(${gunDown ? 520 : 0}px) scale(${isSmall ? 1.18 : 1})`,
             transition: "transform 420ms cubic-bezier(.22,.61,.36,1)",
           }}
         />
       </div>
 
-      {/* iPad pad */}
-      {pad && (
+      {/* Mobile iPhone overlay for rates/contact */}
+      {useIPhoneOverlay && (
+        <IPhonePadOverlay visible={padVisible} onClose={closePad}>
+          {pad === "rates" && <RatesPadContent />}
+          {pad === "contact" && <MobileContactSticky />}
+        </IPhonePadOverlay>
+      )}
+
+      {/* iPad overlay (desktop + mobile for portfolio) */}
+      {pad && !useIPhoneOverlay && (
         <>
           <div
             className="absolute inset-0 bg-black/45"
