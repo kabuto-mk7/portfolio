@@ -7,7 +7,7 @@ export function ClassicTaskbar({
   onStart,
   buttons = [
     { label: "Portfolio", to: "/portfolio" },
-    { label: "Blog", to: "/lab" },
+    { label: "Lab", to: "/lab" },
   ],
 }: {
   onStart: () => void;
@@ -58,7 +58,7 @@ export function ClassicTaskbar({
         title="Start"
       >
         <img src={PF_START} className="h-4 w-4" alt="" />
-        <span className="text-[12px] font-bold tracking-wide">kabuto</span>
+        <span className="text-[12px] font-bold tracking-wide">Home</span>
       </button>
 
       {/* left-aligned buttons */}
