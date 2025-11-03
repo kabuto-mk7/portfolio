@@ -1,28 +1,53 @@
 import React from "react";
 import { Window } from "@/ui/Window";
-import { loadPosts } from "@/lib/content";
 import { navigate } from "@/lib/router";
 import type { Post } from "@/types";
 
+// Supabase-backed public readers + local fallback
+import { listPostsPublic, loadPosts } from "@/lib/storage";
+
 export default function BlogIndexPage() {
   const [posts, setPosts] = React.useState<Post[]>([]);
+  const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
-    // read exactly what AdminPage writes
-    setPosts(loadPosts().filter(p => p.published));
-    // refresh if Admin triggers a navigation to /blog/etc.
-    const onPre = (e: any) => {
-      const next: string = e?.detail?.nextPath ?? "";
-      if (next.startsWith("/blog")) setPosts(loadPosts().filter(p => p.published));
-    };
-    window.addEventListener("kabuto:pre-navigate", onPre);
-    return () => window.removeEventListener("kabuto:pre-navigate", onPre);
+    let alive = true;
+
+    (async () => {
+      try {
+        // 1) Try Supabase (published only)
+        const supa = await listPostsPublic();
+        if (!alive) return;
+
+        if (supa.length > 0) {
+          setPosts(supa);
+        } else {
+          // 2) Fallback to local cache (what Admin writes to LS)
+          const local = loadPosts().filter(p => p.published);
+          if (!alive) return;
+          setPosts(local);
+        }
+      } catch {
+        // Fallback on any error
+        const local = loadPosts().filter(p => p.published);
+        if (!alive) return;
+        setPosts(local);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+
+    return () => { alive = false; };
   }, []);
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
       <Window title="Blog">
-        {posts.length === 0 ? (
+        {loading ? (
+          <div className="rounded border border-[#4a5a45] p-6 text-center text-sm opacity-80">
+            Loading…
+          </div>
+        ) : posts.length === 0 ? (
           <div className="rounded border border-[#4a5a45] p-6 text-center text-sm opacity-80">
             No posts yet.
           </div>

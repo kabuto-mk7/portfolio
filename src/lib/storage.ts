@@ -263,6 +263,57 @@ export async function deletePost(id: string): Promise<void> {
   try { navigator.serviceWorker?.controller?.postMessage({ type:"cache-delete-prefix", payload:{ prefix:`/local/posts/${id}` } }); } catch {}
 }
 
+export async function listPostsPublic(): Promise<Post[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from(POSTS_TABLE)
+    .select("*")
+    .eq("published", true)
+    .order("date", { ascending: false })
+    .order("updated_at", { ascending: false });
+
+  if (error || !data) return [];
+  return data.map((r: any) => ({
+    id: r.id,
+    slug: r.slug,
+    title: r.title,
+    date: r.date ?? "",
+    summary: r.summary ?? "",
+    content: r.content ?? "",
+    published: !!r.published,
+    attachments: Array.isArray(r.attachments)
+      ? r.attachments.map((a: any) => ({ id: a.id, type: a.type, src: a.src }))
+      : [],
+    updatedAt: r.updated_at ? Date.parse(r.updated_at) : Date.now(),
+  }));
+}
+
+/** Public: fetch a single published post by slug */
+export async function getPostBySlugPublic(slug: string): Promise<Post | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from(POSTS_TABLE)
+    .select("*")
+    .eq("slug", slug)
+    .eq("published", true)
+    .single();
+
+  if (error || !data) return null;
+  return {
+    id: data.id,
+    slug: data.slug,
+    title: data.title,
+    date: data.date ?? "",
+    summary: data.summary ?? "",
+    content: data.content ?? "",
+    published: !!data.published,
+    attachments: Array.isArray(data.attachments)
+      ? data.attachments.map((a: any) => ({ id: a.id, type: a.type, src: a.src }))
+      : [],
+    updatedAt: data.updated_at ? Date.parse(data.updated_at) : Date.now(),
+  };
+}
+
 /* ────────────────────────────────────────────────────────────────────────── */
 /* Events (Supabase table with RLS)                                           */
 /* ────────────────────────────────────────────────────────────────────────── */
