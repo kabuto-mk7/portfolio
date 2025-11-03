@@ -1,4 +1,3 @@
-// src/components/overlays/PortfolioWin95Window.tsx
 import React from "react";
 
 type Item = { type: "image" | "video"; src: string };
@@ -24,7 +23,6 @@ export default function PortfolioWin95Window({
     borderBottom: "1px solid #fff",
   };
 
-  // viewer state
   const [viewer, setViewer] = React.useState<number | null>(null);
   const next = React.useCallback(
     () => setViewer((v) => (v === null ? 0 : (v + 1) % items.length)),
@@ -35,7 +33,7 @@ export default function PortfolioWin95Window({
     [items.length]
   );
 
-  // keyboard controls while viewing
+  // keyboard while viewing
   React.useEffect(() => {
     if (viewer === null) return;
     const onKey = (e: KeyboardEvent) => {
@@ -47,13 +45,12 @@ export default function PortfolioWin95Window({
     return () => window.removeEventListener("keydown", onKey);
   }, [viewer, next, prev]);
 
-  // --- Row height: equal row height, varied widths (Apple Photos look)
-  // tweak as you like; clamp keeps it responsive
-  const ROW_H = "clamp(120px, 18vh, 200px)";
+  // cap for thumbnails; tallest item on a line sets the line height
+  const MAX_THUMB_H = "clamp(120px, 20vh, 220px)";
 
   return (
     <div className="fixed inset-0 z-[210] bg-black/45">
-      {/* title bar */}
+      {/* Title bar */}
       <div
         className="fixed left-0 right-0 top-0 h-7 flex items-center justify-between px-2 select-none"
         style={{ background: "#000080", borderBottom: "1px solid #000040", color: "#fff" }}
@@ -70,9 +67,9 @@ export default function PortfolioWin95Window({
         </button>
       </div>
 
-      {/* body */}
+      {/* Body */}
       <div className="fixed left-0 right-0 bottom-0 top-7 bg-[#c0c0c0]" style={{ ...bevelDown }}>
-        {/* menu strip */}
+        {/* Menu strip */}
         <div
           className="px-2 py-1 text-[12px] flex items-center gap-3"
           style={{ background: "#dfdfdf", borderBottom: "1px solid #a0a0a0", color: "#000" }}
@@ -83,19 +80,15 @@ export default function PortfolioWin95Window({
           <span>Help</span>
         </div>
 
-        {/* scroll area */}
+        {/* Scroll area */}
         <div className="absolute left-0 right-0 bottom-0 top-[28px] overflow-auto">
-          {/* wrapper is centered on the page and grows up to a max width */}
-          <div className="mx-auto w-full max-w-[1680px] px-[40px] pt-6 pb-16">
-            {/* FLEX ROWS: equal height, variable width thumbs, top-aligned lines */}
+          <div className="mx-auto w-full max-w-[1680px] px-10 pt-6 pb-16">
+            {/* FLEX WRAP: top-aligned lines; gaps create clean gutters.
+                Tallest item on each line defines the line height. */}
             <div
-              className="flex flex-wrap items-start justify-start gap-x-10 gap-y-18"
+              className="flex flex-wrap items-start justify-start gap-x-10 gap-y-12"
               style={
-                {
-                  // a CSS var for row height used by each thumb
-                  // (so you can adjust from one place)
-                  ["--row-h" as any]: ROW_H,
-                } as React.CSSProperties
+                { ["--max-thumb-h" as any]: MAX_THUMB_H } as React.CSSProperties
               }
             >
               {items.map((it, i) => (
@@ -103,21 +96,20 @@ export default function PortfolioWin95Window({
                   key={i}
                   onClick={() => setViewer(i)}
                   title={`work ${i + 1}`}
-                  className="group relative inline-flex items-stretch justify-center outline-none"
+                  className="group relative inline-flex items-center justify-center outline-none"
                   style={{
-                    height: `var(--row-h)`,
-                    // let width be defined by the media's natural aspect (via w-auto on the media)
-                    // so each thumbnail keeps its intrinsic ratio
-                    borderRadius: 8,
+                    // no fixed height → each item can be different height; line height becomes the tallest
+                    // we limit media height inside, not the container
                   }}
                 >
-                  {/* subtle hover ring like the sample, no card/background */}
-                  <span className="pointer-events-none absolute inset-0 rounded-[8px] ring-0 ring-black/0 group-hover:ring-2 group-hover:ring-black/20 transition" />
+                  {/* hover halo (no background card) */}
+                  <span className="pointer-events-none absolute inset-0 rounded-[10px] ring-0 ring-black/0 group-hover:ring-2 group-hover:ring-black/20 transition" />
+
                   {it.type === "image" ? (
                     <img
                       src={it.src}
                       alt=""
-                      className="h-full w-auto object-contain block"
+                      className="block w-auto h-auto max-h-[var(--max-thumb-h)] object-contain rounded-[10px] shadow-[0_8px_24px_rgba(0,0,0,.25)] group-hover:shadow-[0_12px_28px_rgba(0,0,0,.35)] transition-shadow"
                       loading="lazy"
                       decoding="async"
                       draggable={false}
@@ -125,7 +117,7 @@ export default function PortfolioWin95Window({
                   ) : (
                     <video
                       src={it.src}
-                      className="h-full w-auto object-contain block"
+                      className="block w-auto h-auto max-h-[var(--max-thumb-h)] object-contain rounded-[10px] shadow-[0_8px_24px_rgba(0,0,0,.25)] group-hover:shadow-[0_12px_28px_rgba(0,0,0,.35)] transition-shadow"
                       muted
                       autoPlay
                       loop
@@ -139,7 +131,7 @@ export default function PortfolioWin95Window({
         </div>
       </div>
 
-      {/* fullscreen viewer */}
+      {/* Fullscreen viewer */}
       {viewer !== null && (
         <div className="fixed inset-0 z-[220] bg-black/85 grid place-items-center">
           <button
